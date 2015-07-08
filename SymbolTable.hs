@@ -1,5 +1,6 @@
 module SymbolTable (
-  StorageSymbol(..), StorageLocation(..), SymbolMetadata(..), SymbolTableRow(..),
+  StorageReference (..), StorageLocation(..),
+  SymbolMetadata(..), SymbolType(..), SymbolTableRow(..),
   ContractABI(..), makeContractABI
   ) where
 
@@ -19,16 +20,8 @@ import ParserTypes
 
 import Debug.Trace
 
-data StorageSymbol =
-  VariableSymbol { symbolName :: String, symbolType :: String } |
-  FunctionSymbol { symbolName :: String, symbolArgs :: [String], symbolRet :: String }
-
-toStorageSymbol :: SoliditySymbol -> StorageSymbol
-toStorageSymbol Variable{ varName = name, varType = vType } =
-  VariableSymbol{ symbolName = name, symbolType = show $ pretty vType }
-toStorageSymbol Function{ funcName = name, args = aTypes, returns = rType} =
-  FunctionSymbol{ symbolName = name, symbolArgs = map (show . pretty) aTypes,
-                  symbolRet = maybe "" (show . pretty) rType }
+data StorageReference =
+  NoReference | UndeterminedReference | AddressReference Integer
 
 data StorageLocation =
   StorageLocation {
@@ -37,12 +30,12 @@ data StorageLocation =
     {- A dynamic array has Just (Right addr) here, where addr is the location of the array data.
        A mapping has Just (Left ()) here, because its values are not stored at fixed locations.
        All other types have Nothing. -}
-    dataReference :: Maybe (Either () Integer)
+    dataReference :: StorageReference
     }
 
 data SymbolMetadata =
   EnumMetadata { enumNames :: Map String Integer } |
-  StructMetadata { fieldsTable :: [SymbolTableRow] } | -- Relative symbol table
+  StructMetadata { fieldsTable :: Map String SymbolTableRow } | -- Relative symbol table
   {- In thse two, the {element|value}Storage contains a representative symbol table row
      for an element of the array or mapping.  Its storageLocation is Nothing, since that
      cannot be determined in advance. However, if it is a complex type (say, a struct)
@@ -53,74 +46,84 @@ data SymbolMetadata =
   MappingMetadata { valueStorage :: SymbolTableRow } |
   FunctionMetadata { functionSelector :: String } -- For message calls
 
+data SymbolType =
+  VariableType { symbolVarType :: String } |
+  FunctionType { symbolArgTypes :: [String], symbolReturnType :: String }
+
 data SymbolTableRow =
   SymbolTableRow {
-    storageSymbol :: StorageSymbol,
+    symbolType :: SymbolType,
     storageLocation :: Maybe StorageLocation,
     storageSize :: Integer,
     symbolMetadata :: Maybe SymbolMetadata
     }
 
-initSymbolTableRow :: SoliditySymbol -> SymbolTableRow
-initSymbolTableRow sym@Function{} =
-  SymbolTableRow {
-    storageSymbol = toStorageSymbol sym,
-    storageSize = 0,
-    symbolMetadata = Just $
-      FunctionMetadata {
-        functionSelector = makeFunctionSelector sym
-        }
-    }
+initSymbolTableRow :: SoliditySymbol -> (String, SymbolTableRow)
+initSymbolTableRow sym@Function{ funcName = name, args = fArgs, returns = ret } =
+  ( name,
+    SymbolTableRow {
+       symbolType = FunctionType prettyArgs prettyRet,
+       storageSize = 0,
+       symbolMetadata = Just $
+                        FunctionMetadata {
+                          functionSelector = makeFunctionSelector sym
+                          }
+       }
+  )
   where
+    prettyArgs = map (show . pretty) fArgs
+    prettyRet = maybe "" (show . pretty) ret
     makeFunctionSelector = concatMap (flip showHex "") . BS.unpack .
       BS.take 4 . BS.fromStrict . SHA3.hash 256 . BS.toStrict . canonicalSignature 
          
-initSymbolTableRow sym@Variable{varType = vType} =
-  SymbolTableRow {
-    storageSymbol = toStorageSymbol sym,
-    storageLocation =
-      Just $ StorageLocation {
-        storageKey = 0,
-        storageValOffset = 0,
-        dataReference = symDefaultDataReference
-        },
-    storageSize = symSize,
-    symbolMetadata = symMetadata
-    }
+initSymbolTableRow sym@Variable{ varName = name, varType = vType } =
+  ( name,
+    SymbolTableRow {
+       symbolType = VariableType $ show $ pretty vType,
+       storageLocation =
+         Just $ StorageLocation {
+           storageKey = 0,
+           storageValOffset = 0,
+           dataReference = symDefaultDataReference
+           },
+       storageSize = symSize,
+       symbolMetadata = symMetadata
+       }
+  )
   where
-    defaultDataReference = Just $ Right $ getArrayReference 0
+    defaultDataReference = AddressReference $ getArrayReference 0
     (symSize, symMetadata, symDefaultDataReference) = case vType of
-      Boolean -> (1, Nothing, Nothing)
-      Address -> (20, Nothing, Nothing)
+      Boolean -> (1, Nothing, NoReference)
+      Address -> (20, Nothing, NoReference)
       String -> (32, Just $ ArrayMetadata {
                     elementStorage = Nothing,
                     arrayLength = Nothing,
                     newKeyAfterEvery = 32 },
                  defaultDataReference)
-      SignedInt b -> (b, Nothing, Nothing)
-      UnsignedInt b -> (b, Nothing, Nothing)
-      FixedBytes b -> (b, Nothing, Nothing)
+      SignedInt b -> (b, Nothing, NoReference)
+      UnsignedInt b -> (b, Nothing, NoReference)
+      FixedBytes b -> (b, Nothing, NoReference)
       DynamicBytes ->
         let elemRow =
-              head $ makeVariableSymbolTable
+              snd $ head $ makeVariableSymbolTable
               [Variable { varName = "", varType = FixedBytes 1 }]
         in (32, Just $ ArrayMetadata { elementStorage = Just elemRow,
                                        arrayLength = Nothing,
                                        newKeyAfterEvery = 32 },
             defaultDataReference)
-      SignedReal b _ -> (b, Nothing, Nothing)
-      UnsignedReal b _ -> (b, Nothing, Nothing)
+      SignedReal b _ -> (b, Nothing, NoReference)
+      UnsignedReal b _ -> (b, Nothing, NoReference)
       FixedArray t l ->
-        let elemRow = head $ makeVariableSymbolTable
+        let elemRow = snd $ head $ makeVariableSymbolTable
                       [Variable { varName = "", varType = t }]
             elemSize = storageSize elemRow
         in (l * elemSize, Just $
                           ArrayMetadata { elementStorage = Just elemRow,
                                           arrayLength = Just l,
                                           newKeyAfterEvery = 32 `quot` elemSize },
-            Nothing)
+            NoReference)
       DynamicArray t ->
-        let elemRow = head $ makeVariableSymbolTable
+        let elemRow = snd $ head $ makeVariableSymbolTable
                       [Variable { varName = "", varType = t }]
             elemSize = storageSize elemRow
         in (32, Just $ ArrayMetadata {
@@ -129,35 +132,36 @@ initSymbolTableRow sym@Variable{varType = vType} =
                newKeyAfterEvery = 32 `quot` elemSize },
             defaultDataReference)
       Mapping d t ->
-        let valRow = head $ makeVariableSymbolTable
+        let valRow = snd $ head $ makeVariableSymbolTable
                      [Variable { varName = "", varType = t }]
         in (32, Just $ MappingMetadata {
                valueStorage = valRow{ storageLocation = Nothing} }, 
-            Just $ Left ()) 
+            UndeterminedReference) 
       Enum names ->
         (ceiling $ logBase 8 $ fromIntegral $ length names,
          Just $ EnumMetadata { enumNames = Map.fromList $ zip names [0 .. ] },
-         Nothing)
+         NoReference)
       Struct fields ->
         let fieldRows = makeVariableSymbolTable fields
-        in (sum $ map storageSize fieldRows,
-            Just $ StructMetadata { fieldsTable = fieldRows },
-            Nothing)
+        in (sum $ map (storageSize . snd) fieldRows,
+            Just $ StructMetadata { fieldsTable = Map.fromList fieldRows },
+            NoReference)
 
-makeVariableSymbolTable :: [SoliditySymbol] -> [SymbolTableRow]
+makeVariableSymbolTable :: [SoliditySymbol] -> [(String, SymbolTableRow)]
 makeVariableSymbolTable = fst . makeSymbolTable
 
-makeSymbolTable :: [SoliditySymbol] -> ([SymbolTableRow], [SymbolTableRow])
+makeSymbolTable :: [SoliditySymbol] -> ([(String, SymbolTableRow)], [(String, SymbolTableRow)])
 makeSymbolTable syms = bimap makeStorage (map noStorage) varsFuncs
   where
     varsFuncs = partition isVariable syms
     isVariable (Variable {}) = True
     isVariable _ = False
 
-    noStorage sym = (initSymbolTableRow sym) { storageLocation = Nothing }
+    noStorage sym = (name, row{ storageLocation = Nothing })
+      where (name, row) = initSymbolTableRow sym
 
     makeStorage = scanl1 addStorage . map initSymbolTableRow
-    addStorage row row' =
+    addStorage (_,row) (name, row') =
       let
         Just rowStorage = storageLocation row
         dr0 = dataReference rowStorage
@@ -167,16 +171,16 @@ makeSymbolTable syms = bimap makeStorage (map noStorage) varsFuncs
         key0 = storageKey rowStorage
         (newKey, newOff) =
           if nextOff > 32 || newOff0 == 32 then (key0 + 1, 0) else (key0, newOff0)
-      in row' {
+      in (name, row' {
         storageLocation = Just $
            StorageLocation {
              storageKey = newKey,
              storageValOffset = newOff,
              dataReference = case dr0 of
-               Just (Right _) -> Just $ Right $ getArrayReference newKey
+               AddressReference _ -> AddressReference $ getArrayReference newKey
                _ -> dr0
              }
-        }
+        })
 
 getArrayReference :: Integer -> Integer
 getArrayReference key =
@@ -186,15 +190,15 @@ getArrayReference key =
 
 data ContractABI =
   ContractABI { contractABIName :: String,
-                contractVariables :: [SymbolTableRow],
-                contractFunctions :: [SymbolTableRow] }
+                contractVariables :: Map String SymbolTableRow,
+                contractFunctions :: Map String SymbolTableRow }
 
 makeContractABI :: SolidityContract -> ContractABI
 makeContractABI Contract{contractName = name, contractABI = abi} =
   ContractABI {
     contractABIName = name,
-    contractVariables = vars,
-    contractFunctions = funcs
+    contractVariables = Map.fromList vars,
+    contractFunctions = Map.fromList funcs
     }
   where (vars, funcs) = makeSymbolTable abi
                         
