@@ -1,9 +1,61 @@
-{-# LANGUAGE FlexibleInstances #-}
-
 module ParserTypes where
 
+import Control.Arrow
+import Data.ByteString (ByteString)
+import Data.Functor
+import qualified Data.Map.Strict as Map hiding (Map)
+import Data.Map.Strict (Map)
+import Text.Parsec
 import Text.PrettyPrint
 import Data.List
+import Data.Word
+  
+data ContractDefinitions =
+  ContractDefinitions {
+    currentContract :: String,
+    contractTypes :: Map String SolidityType,
+    contractConsts :: Map String SolidityConstant
+    }
+
+emptyDefinitions :: ContractDefinitions
+emptyDefinitions = ContractDefinitions "" Map.empty Map.empty
+
+clearState :: SolidityParser ()
+clearState = putState emptyDefinitions -- will change when we do contract types
+
+type SolidityParser = Parsec String ContractDefinitions
+
+setContractName :: String -> SolidityParser ()
+setContractName name = do
+  state <- getState
+  putState $ state{currentContract = name}
+
+getContractName :: SolidityParser String
+getContractName = do
+  state <- getState
+  return $ currentContract state
+
+addToTypeDefs :: String -> SolidityType -> SolidityParser ()
+addToTypeDefs s t = do
+  state <- getState
+  let types' = Map.insert s t $ contractTypes state
+  putState $ state{contractTypes = types'}
+
+getFromTypeDefs :: String -> SolidityParser (Maybe SolidityType)
+getFromTypeDefs s = do
+  state <- getState
+  return $ Map.lookup s (contractTypes state)
+
+addToConsts :: String -> SolidityConstant -> SolidityParser ()
+addToConsts s c = do
+  state <- getState
+  let consts' = Map.insert s c $ contractConsts state
+  putState $ state{contractConsts = consts'}
+
+getFromConsts :: String -> SolidityParser (Maybe SolidityConstant)
+getFromConsts s = do
+  state <- getState
+  return $ Map.lookup s (contractConsts state)
 
 data SolidityContract =
   Contract { contractName :: String, contractABI :: [SoliditySymbol] }
@@ -18,50 +70,28 @@ data SoliditySymbol =
 data SolidityType =
   Boolean |
   Address |
-  SignedInt   { size :: Integer } |
-  UnsignedInt { size :: Integer } |
-  Bytes       { size :: Integer } |
-  FixedArray  { elemType :: SolidityType } |
+  String  |
+  SignedInt   { bytes :: Integer } |
+  UnsignedInt { bytes :: Integer } |
+  FixedBytes  { bytes :: Integer } |
+  DynamicBytes|
+  SignedReal  { bytes :: Integer, precision :: Integer } |
+  UnsignedReal{ bytes :: Integer, precision :: Integer } |  
+  FixedArray  { elemType :: SolidityType, fixedLength :: Integer } |
   DynamicArray{ elemType :: SolidityType } |
   Mapping     { domType  :: SolidityType, codType :: SolidityType } |
   Enum        { names  :: [String] } |
   Struct      { fields :: [SoliditySymbol] }
   deriving (Show)
 
-data SolidityTypeExtended =
-  DeclaredType { declType :: SolidityType } |
-  FunctionType { funcArgs :: [SolidityType], funcRet :: Maybe SolidityType } |
-  ContractType { implemented :: [SoliditySymbol], abstract :: [SoliditySymbol] }
-
-class Pretty a where
-  pretty :: a -> Doc
-
-instance Pretty SolidityContract where
-  pretty (Contract name abi) =
-    text "contract" <+> text name $+$ nest 2 (vcat $ map pretty abi)
-
-instance Pretty SoliditySymbol where
-  pretty (Variable name vType) =
-    text name <+> text "::" <+> pretty vType
-  pretty (Function name args returns) =
-    text name <+> text "::" <+>
-    (parens $ hsep $ punctuate (text ",") $ map pretty args) <+>
-    text "->" <+>
-    maybe (text "()") pretty returns
-
-instance Pretty SolidityType where
-  pretty Boolean = text "boolean"
-  pretty Address = text "address"
-  pretty (SignedInt s) = text "int" <> integer s
-  pretty (UnsignedInt s) = text "uint" <> integer s
-  pretty (Bytes s) = text "bytes" <> integer s
-  pretty (FixedArray t) = (pretty t) <> text "[#]"
-  pretty (DynamicArray t) = (pretty t) <> text "[]"
-  pretty (Mapping d c) = parens $ pretty d <+> text "=>" <+> pretty c
-  pretty (Enum names) = braces $ hsep $ punctuate (text ",") $
-                        [ text name <+> text "=" <+> integer n |
-                          (name, n) <- zip names [0..] ]
-  pretty (Struct fields) = braces $ hsep $ punctuate (text ";") $ map pretty fields
-
-instance Pretty [SolidityContract] where
-  pretty = vcat . intersperse (text "") . map pretty
+data SolidityConstant =
+  BooleanAs Bool |
+  AddressAs Integer |
+  StringAs String |
+  SignedIntAs Integer |
+  UnsignedIntAs Integer |
+  FixedBytesAs ByteString |
+  DynamicBytesAs ByteString |
+  SignedRealAs (Integer, Word) |
+  UnsignedRealAs (Integer, Word) |
+  EnumAs (Map String Integer)
