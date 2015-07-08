@@ -26,6 +26,7 @@ executable solidity-abi
                        text,
                        pretty,
                        aeson,
+                       aeson-pretty,
                        cryptohash,
                        bifunctors,
                        binary
