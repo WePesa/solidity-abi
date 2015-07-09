@@ -61,14 +61,14 @@ functionDeclaration = do
   functionRet <- functionModifiers -- Only handles "returns" for now
   _ <- bracedCode <|> (semi >> return ()) -- Doesn't handle function bodies yet
   contractName <- getContractName
-  return $
-    if isNothing functionName || fromJust functionName == contractName
-    then Nothing
-    else Just $ Function {
-      funcName = fromJust functionName,
-      args = functionArgs,
-      returns = functionRet
-      }
+  return $ Nothing
+    -- if isNothing functionName || fromJust functionName == contractName
+    -- then Nothing
+    -- else Just $ Function {
+    --   funcName = fromJust functionName,
+    --   args = functionArgs,
+    --   returns = functionRet
+    --   }
 
 bracedCode :: SolidityParser ()
 bracedCode = braces $ skipMany $ (skipMany1 $ noneOf "{}") <|> bracedCode

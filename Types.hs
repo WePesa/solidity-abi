@@ -23,8 +23,8 @@ simpleType =
   realSuffixed "real" SignedReal     <|>
   (do
       alias <- identifier
-      Just realType <- getFromTypeDefs alias -- Crashes if unknown
-      return realType)
+      --Just realType <- getFromTypeDefs alias -- Crashes if unknown
+      return $ UserDefined alias)
   where
     simple name nameType = do
       reserved name

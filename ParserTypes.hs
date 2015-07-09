@@ -81,7 +81,8 @@ data SolidityType =
   DynamicArray{ elemType :: SolidityType } |
   Mapping     { domType  :: SolidityType, codType :: SolidityType } |
   Enum        { names  :: [String] } |
-  Struct      { fields :: [SoliditySymbol] }
+  Struct      { fields :: [SoliditySymbol] } |
+  UserDefined { typeName :: String }
   deriving (Show)
 
 data SolidityConstant =
