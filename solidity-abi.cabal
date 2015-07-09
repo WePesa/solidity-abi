@@ -21,6 +21,28 @@ executable solidity-abi
   other-extensions:    FlexibleInstances, TemplateHaskell
   build-depends:       base >=4.7 && <4.8,
                        containers,
+                       ethereum-util,
+                       parsec,
+                       bytestring,
+                       text,
+                       pretty,
+                       aeson,
+                       aeson-pretty,
+                       cryptohash,
+                       bifunctors,
+                       binary
+  -- hs-source-dirs:      
+  default-language:    Haskell2010
+
+library
+  exposed-modules:     Blockchain.Solidity.ABI
+  other-modules:       SymbolTable, Parser, JSON, Declarations,
+                       Expression, Lexer, Modifiers, ParserTypes,
+                       Pretty, Types
+  other-extensions:    FlexibleInstances, TemplateHaskell
+  build-depends:       base >=4.7 && <4.8,
+                       containers,
+                       ethereum-util,
                        parsec,
                        bytestring,
                        text,

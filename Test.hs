@@ -1,6 +1,4 @@
-import Parser
-import SymbolTable
-import JSON
+import Blockchain.Solidity.ABI
 
 import qualified Data.Aeson.Encode.Pretty as Aeson
 import qualified Data.ByteString.Lazy as BS
