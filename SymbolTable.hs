@@ -110,6 +110,10 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
                                        arrayLen = Nothing,
                                        newKeyAfterEvery = 32 },
             defaultDataReference)
+      String -> (32, Just $ ArrayMetadata { elementStorage = Nothing,
+                                            arrayLen = Nothing,
+                                            newKeyAfterEvery = 32 },
+                 defaultDataReference)
       SignedReal b _ -> (b, Nothing, NoReference)
       UnsignedReal b _ -> (b, Nothing, NoReference)
       FixedArray t l ->

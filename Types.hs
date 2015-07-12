@@ -16,6 +16,7 @@ simpleType :: SolidityParser SolidityType
 simpleType =
   simple "bool" Boolean <|>
   simple "address" Address <|>
+  simple "string" String <|>
   bytes <|>
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>

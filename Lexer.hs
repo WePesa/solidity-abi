@@ -26,7 +26,7 @@ solidityLanguage = javaStyle {
      "contract", "is", "public", "internal", "private", "external", "import",
      "event", "indexed", "anonymous",
      "bool", "true", "false",
-     "uint", "int", "bytes", "byte", "real", "ureal",
+     "uint", "int", "bytes", "byte", "real", "ureal", "string",
      "address", --"send", "balance",
      "enum", "struct", "mapping", "var",
      "function", "returns", "return", "modifier",

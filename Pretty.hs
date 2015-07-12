@@ -37,6 +37,7 @@ instance Pretty SolidityType where
   pretty (UnsignedInt s) = text "uint" <> integer (s * 8)
   pretty (FixedBytes s) = text "bytes" <> integer s
   pretty DynamicBytes = text "bytes"
+  pretty String = text "string"
   pretty (SignedReal s p) = text "real" <> integer ((s - p) * 8) <> text "x" <> integer (p * 8)
   pretty (UnsignedReal s p) = text "ureal" <> integer ((s - p) * 8) <> text "x" <> integer (p * 8)
   pretty (FixedArray t l) = (pretty t) <> text "[" <> integer l <> text "]"
