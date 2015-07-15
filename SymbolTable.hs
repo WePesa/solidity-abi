@@ -94,11 +94,6 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
     (symSize, symMetadata, symDefaultDataReference) = case vType of
       Boolean -> (1, Nothing, NoReference)
       Address -> (20, Nothing, NoReference)
-      String -> (32, Just $ ArrayMetadata {
-                    elementStorage = Nothing,
-                    arrayLen = Nothing,
-                    newKeyAfterEvery = 32 },
-                 defaultDataReference)
       SignedInt b -> (b, Nothing, NoReference)
       UnsignedInt b -> (b, Nothing, NoReference)
       FixedBytes b -> (b, Nothing, NoReference)
@@ -106,7 +101,7 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
         let elemRow =
               snd $ head $ makeVariableSymbolTable decls
               [Variable { varName = "", varType = FixedBytes 1 }]
-        in (32, Just $ ArrayMetadata { elementStorage = Just elemRow,
+        in (32, Just $ ArrayMetadata { elementStorage = Nothing,
                                        arrayLen = Nothing,
                                        newKeyAfterEvery = 32 },
             defaultDataReference)
@@ -120,10 +115,15 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
         let elemRow = snd $ head $ makeVariableSymbolTable decls
                       [Variable { varName = "", varType = t }]
             elemSize = storageSize elemRow
-        in (l * elemSize, Just $
+            (newEach, numSlots) =
+              if elemSize <= 32
+              then (32 `quot` elemSize,
+                    l `quot` newEach + (if l `rem` newEach == 0 then 0 else 1))
+              else (1, l * (elemSize `quot` 32)) -- always have rem = 0
+        in (32 * numSlots, Just $
                           ArrayMetadata { elementStorage = Just elemRow,
                                           arrayLen = Just l,
-                                          newKeyAfterEvery = 32 `quot` elemSize },
+                                          newKeyAfterEvery = newEach},
             NoReference)
       DynamicArray t ->
         let elemRow = snd $ head $ makeVariableSymbolTable decls
@@ -132,7 +132,7 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
         in (32, Just $ ArrayMetadata {
                elementStorage = Just elemRow{ storageLocation = Nothing },
                arrayLen = Nothing,
-               newKeyAfterEvery = 32 `quot` elemSize },
+               newKeyAfterEvery = max 1 $ 32 `quot` elemSize },
             defaultDataReference)
       Mapping d t ->
         let valRow = snd $ head $ makeVariableSymbolTable decls
@@ -149,7 +149,11 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
          NoReference)
       Struct fields ->
         let fieldRows = makeVariableSymbolTable decls fields
-        in (sum $ map (storageSize . snd) fieldRows,
+            numSlots =
+              if null fieldRows
+              then 0
+              else 1 + (storageKey $ fromJust $ storageLocation $ snd $ last fieldRows)
+        in (32 * numSlots,
             Just $ StructMetadata { fieldsTable = Map.fromList fieldRows },
             NoReference)
       UserDefined name ->
@@ -176,12 +180,15 @@ makeSymbolTable decls syms = bimap makeStorage (map noStorage) varsFuncs
       let
         Just rowStorage = storageLocation row
         dr0 = dataReference rowStorage
-        off0 = storageValOffset rowStorage
-        newOff0 = off0 + storageSize row
-        nextOff = newOff0 + storageSize row'
-        key0 = storageKey rowStorage
+
+        lastOff = storageValOffset rowStorage
+        lastEndOff = lastOff + storageSize row
+        nextOff0 = lastEndOff + storageSize row'
+        lastKey = storageKey rowStorage
         (newKey, newOff) =
-          if nextOff > 32 || newOff0 == 32 then (key0 + 1, 0) else (key0, newOff0)
+          if nextOff0 > 32
+          then (lastKey + (storageSize row') `quot` 32, 0) -- always has rem = 0
+          else (lastKey, nextOff0)
       in (name, row' {
         storageLocation = Just $
            StorageLocation {
@@ -207,6 +214,7 @@ data SymbolTableRowView =
     bytesUsed :: String,
     solidityType :: String,
     atStorageKey :: Maybe String,
+    atStorageOffset :: Maybe String,
     arrayDataStart :: Maybe String,
     arrayElement :: Maybe SymbolTableRowView,
     arrayLength :: Maybe String,
@@ -221,14 +229,13 @@ makeSymTabView :: SymbolTableRow -> SymbolTableRowView
 makeSymTabView row =
   let baseView = SymbolTableRowView {
         solidityType = symbolVarType $ symbolType row,
-        atStorageKey = do
+        atStorageKey = (toHex . storageKey) <$> storageLocation row,
+        atStorageOffset = do
           storageLoc <- storageLocation row
-          let sKey = storageKey storageLoc
-              sOff = storageValOffset storageLoc
-          return $ toHex sKey ++
-            if sOff /= 0
-            then "+" ++ toHex sOff
-            else "",
+          let sOff = storageValOffset storageLoc
+          if sOff /= 0
+            then Just $ toHex sOff
+            else Nothing,
         bytesUsed = toHex $ storageSize row,
         arrayDataStart = Nothing,
         arrayElement = Nothing,

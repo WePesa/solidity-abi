@@ -70,11 +70,11 @@ data SoliditySymbol =
 data SolidityType =
   Boolean |
   Address |
-  String  |
   SignedInt   { bytes :: Integer } |
   UnsignedInt { bytes :: Integer } |
   FixedBytes  { bytes :: Integer } |
   DynamicBytes|
+  String |
   SignedReal  { bytes :: Integer, precision :: Integer } |
   UnsignedReal{ bytes :: Integer, precision :: Integer } |  
   FixedArray  { elemType :: SolidityType, fixedLength :: Integer } |

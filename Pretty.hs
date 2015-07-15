@@ -30,9 +30,8 @@ instance Pretty SoliditySymbol where
     (parens $ hsep $ punctuate (text ",") $ map pretty args)
 
 instance Pretty SolidityType where
-  pretty Boolean = text "boolean"
+  pretty Boolean = text "bool"
   pretty Address = text "address"
-  pretty String = text "string"
   pretty (SignedInt s) = text "int" <> integer (s * 8)
   pretty (UnsignedInt s) = text "uint" <> integer (s * 8)
   pretty (FixedBytes s) = text "bytes" <> integer s
