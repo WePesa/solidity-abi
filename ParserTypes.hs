@@ -75,13 +75,14 @@ data SolidityType =
   FixedBytes  { bytes :: Integer } |
   DynamicBytes|
   String |
-  SignedReal  { bytes :: Integer, precision :: Integer } |
-  UnsignedReal{ bytes :: Integer, precision :: Integer } |  
+  -- SignedReal  { bytes :: Integer, precision :: Integer } |
+  -- UnsignedReal{ bytes :: Integer, precision :: Integer } |  
   FixedArray  { elemType :: SolidityType, fixedLength :: Integer } |
   DynamicArray{ elemType :: SolidityType } |
   Mapping     { domType  :: SolidityType, codType :: SolidityType } |
   Enum        { names  :: [String] } |
   Struct      { fields :: [SoliditySymbol] } |
+  ContractT |
   UserDefined { typeName :: String }
   deriving (Show)
 

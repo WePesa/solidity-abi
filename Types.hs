@@ -20,8 +20,8 @@ simpleType =
   bytes <|>
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
-  realSuffixed "ureal" UnsignedReal  <|>
-  realSuffixed "real" SignedReal     <|>
+  -- realSuffixed "ureal" UnsignedReal  <|>
+  -- realSuffixed "real" SignedReal     <|>
   (do
       alias <- identifier
       --Just realType <- getFromTypeDefs alias -- Crashes if unknown
@@ -44,15 +44,15 @@ simpleType =
       sizeM <- optionMaybe $ choice $ map (try . string) sizesS
       let size = read $ fromMaybe (head sizesS) sizeM
       return $ baseType (size `quot` 8) -- in bytes
-    realSuffixed base baseType = lexeme $ try $ do
-      string base
-      suffixM <- optionMaybe $ choice $ map try
-                 [ string ((show n) ++ "x" ++ (show m)) >> return (size, m) |
-                   n <- reverse [0, 8 .. 256],
-                   m <- reverse [0, 8 .. 256 - n],
-                   let size = n + m, size /= 0]
-      return $ uncurry baseType $
-        maybe (32,16) (\(s,m) -> (s `quot` 8, m `quot` 8)) suffixM -- in bytes
+    -- realSuffixed base baseType = lexeme $ try $ do
+    --   string base
+    --   suffixM <- optionMaybe $ choice $ map try
+    --              [ string ((show n) ++ "x" ++ (show m)) >> return (size, m) |
+    --                n <- reverse [0, 8 .. 256],
+    --                m <- reverse [0, 8 .. 256 - n],
+    --                let size = n + m, size /= 0]
+    --   return $ uncurry baseType $
+    --     maybe (32,16) (\(s,m) -> (s `quot` 8, m `quot` 8)) suffixM -- in bytes
 
 arrayType :: SolidityParser SolidityType
 arrayType = do

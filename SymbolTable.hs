@@ -1,7 +1,7 @@
 module SymbolTable (
   SymbolTableRowView(..),
   ContractSymbolTable(..),
-  makeContractSymbolTable
+  makeABISymbols
   ) where
 
 import Blockchain.ExtWord (Word256)
@@ -109,8 +109,8 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
                                             arrayLen = Nothing,
                                             newKeyAfterEvery = 32 },
                  defaultDataReference)
-      SignedReal b _ -> (b, Nothing, NoReference)
-      UnsignedReal b _ -> (b, Nothing, NoReference)
+      -- SignedReal b _ -> (b, Nothing, NoReference)
+      -- UnsignedReal b _ -> (b, Nothing, NoReference)
       FixedArray t l ->
         let elemRow = snd $ head $ makeVariableSymbolTable decls
                       [Variable { varName = "", varType = t }]
@@ -156,6 +156,7 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
         in (32 * numSlots,
             Just $ StructMetadata { fieldsTable = Map.fromList fieldRows },
             NoReference)
+      ContractT -> (20, Nothing, NoReference);
       UserDefined name ->
         let Just realTypeRow = Map.lookup name decls
         in (storageSize realTypeRow, Nothing, NoReference)
@@ -291,5 +292,18 @@ makeContractSymbolTable
   where
     declRows = Map.fromList $ map (initSymbolTableRow declRows) decls
     varRows = Map.fromList $ makeVariableSymbolTable declRows vars
-    table = declRows `Map.union` varRows
+    table =
+      let
+        isNotContract SymbolTableRow{symbolType = VariableType "contract"} = False
+        isNotContract _ = True
+      in (Map.filter isNotContract declRows) `Map.union` varRows
                         
+makeABISymbols :: [([SoliditySymbol], SolidityContract)]
+                  -> Map String ContractSymbolTable
+makeABISymbols declsContracts =
+  Map.fromList
+  [ makeContractSymbolTable (extDecls, contract) |
+    (decls, contract) <- declsContracts,
+    let contractToSym Contract{ contractName = name } =
+          Variable { varName = name, varType = ContractT }
+        extDecls = [ contractToSym c | (_, c) <- declsContracts ] ++ decls ]

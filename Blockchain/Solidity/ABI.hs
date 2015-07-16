@@ -1,6 +1,6 @@
 module Blockchain.Solidity.ABI (
   getABI,
-  makeContractSymbolTable
+  makeABISymbols
   -- + JSON instances
   ) where
 

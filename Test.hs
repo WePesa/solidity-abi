@@ -7,4 +7,4 @@ import Data.Map (fromList)
 
 main = do
   solidityCode <- getContents
-  either print (BS.putStr . Aeson.encodePretty . fromList) $ map makeContractSymbolTable <$> getABI "stdin" solidityCode
+  either print (BS.putStr . Aeson.encodePretty) $ makeABISymbols <$> getABI "stdin" solidityCode
