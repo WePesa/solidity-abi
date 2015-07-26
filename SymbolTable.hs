@@ -46,7 +46,8 @@ data SymbolMetadata =
 
 data SymbolType =
   VariableType { symbolVarType :: String } |
-  FunctionType { symbolArgTypes :: [String], symbolReturnType :: String }
+  FunctionType { symbolArgTypes :: [String], symbolArgNames :: [String],
+                 symbolReturnType :: String }
 
 data SymbolTableRow =
   SymbolTableRow {
@@ -61,7 +62,7 @@ initSymbolTableRow :: Map String SymbolTableRow -> SoliditySymbol
 initSymbolTableRow _ sym@Function{ funcName = name, args = fArgs, returns = ret } =
   ( name,
     SymbolTableRow {
-       symbolType = FunctionType prettyArgs prettyRet,
+       symbolType = FunctionType prettyArgs prettyArgNames prettyRet,
        storageSize = 0,
        symbolMetadata = Just $
                         FunctionMetadata {
@@ -70,9 +71,10 @@ initSymbolTableRow _ sym@Function{ funcName = name, args = fArgs, returns = ret 
        }
   )
   where
-    prettyArgs = map (show . pretty) fArgs
+    prettyArgNames = map varName fArgs
+    prettyArgs = map (show . pretty . varType) fArgs
     prettyRet = maybe "" (show . pretty) ret
-    makeFunctionSelector = concatMap toHex . BS.unpack .
+    makeFunctionSelector = concatMap (flip showHex "") . BS.unpack .
       BS.take 4 . BS.fromStrict . SHA3.hash 256 . BS.toStrict . canonicalSignature 
          
 initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
@@ -188,7 +190,9 @@ makeSymbolTable decls syms = bimap makeStorage (map noStorage) varsFuncs
         lastKey = storageKey rowStorage
         (newKey, newOff) =
           if nextOff0 > 32
-          then (lastKey + (storageSize row') `quot` 32, 0) -- always has rem = 0
+          then
+            let rowIncr = max 1 $ storageSize row `quot` 32
+            in (lastKey + rowIncr, 0)
           else (lastKey, nextOff0)
       in (name, row' {
         storageLocation = Just $
@@ -223,11 +227,37 @@ data SymbolTableRowView =
     enumNames :: Maybe (Map String Integer),
     structFields :: Maybe (Map String SymbolTableRowView),
     mappingValue :: Maybe SymbolTableRowView,
-    mappingKey :: Maybe SymbolTableRowView
+    mappingKey :: Maybe SymbolTableRowView,
+    functionDomain :: Maybe [String],
+    functionReturns :: Maybe String,
+    functionArgs :: Maybe [String],
+    functionHash :: Maybe String
     }
 
 makeSymTabView :: SymbolTableRow -> SymbolTableRowView
-makeSymTabView row =
+makeSymTabView row@SymbolTableRow{ symbolType = symtype@FunctionType {} } =
+  SymbolTableRowView {
+    bytesUsed = "0x0",
+    solidityType =
+      "function(" ++ (concat $ intersperse "," $ symbolArgTypes symtype)
+      ++ ") returns (" ++ symbolReturnType symtype ++ ")",
+    atStorageKey = Nothing,
+    atStorageOffset = Nothing,
+    arrayDataStart = Nothing,
+    arrayElement = Nothing,
+    arrayLength = Nothing,
+    arrayNewKeyEach = Nothing,
+    enumNames = Nothing,
+    structFields = Nothing,
+    mappingValue = Nothing,
+    mappingKey = Nothing,
+    functionDomain = Just (symbolArgTypes symtype),
+    functionReturns = Just (symbolReturnType symtype),
+    functionArgs = Just (symbolArgNames symtype),
+    functionHash = Just (functionSelector $ fromJust $ symbolMetadata row)
+    }                     
+
+makeSymTabView row@SymbolTableRow{ symbolType = VariableType {} } =
   let baseView = SymbolTableRowView {
         solidityType = symbolVarType $ symbolType row,
         atStorageKey = (toHex . storageKey) <$> storageLocation row,
@@ -245,7 +275,11 @@ makeSymTabView row =
         enumNames = Nothing,
         structFields = Nothing,
         mappingValue = Nothing,
-        mappingKey = Nothing
+        mappingKey = Nothing,
+        functionDomain = Nothing,
+        functionReturns = Nothing,
+        functionArgs = Nothing,
+        functionHash = Nothing
         }                       
   in case symbolMetadata row of
     Nothing -> baseView
@@ -291,7 +325,8 @@ makeContractSymbolTable
    --   })
   where
     declRows = Map.fromList $ map (initSymbolTableRow declRows) decls
-    varRows = Map.fromList $ makeVariableSymbolTable declRows vars
+    (vs, fs) = makeSymbolTable declRows vars
+    varRows = Map.fromList (vs ++ fs)
     table =
       let
         isNotContract SymbolTableRow{symbolType = VariableType "contract"} = False

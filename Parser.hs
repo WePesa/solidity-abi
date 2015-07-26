@@ -7,6 +7,7 @@ import Declarations
 import Lexer
 import ParserTypes
 
+
 getABI :: SourceName -> String
           -> Either ParseError [([SoliditySymbol],SolidityContract)]
 getABI = runParser solidityFile emptyDefinitions
