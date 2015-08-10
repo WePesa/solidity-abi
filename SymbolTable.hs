@@ -42,12 +42,15 @@ data SymbolMetadata =
                   newKeyAfterEvery :: Integer } |
   MappingMetadata { valueStorage :: SymbolTableRow,
                     keyStorage :: SymbolTableRow } |
-  FunctionMetadata { functionSelector :: String } -- For message calls
+  FunctionMetadata { functionSelector :: String,  -- For message calls
+                     functionSignature :: String
+                   }
 
 data SymbolType =
-  VariableType { symbolVarType :: String } |
-  FunctionType { symbolArgTypes :: [String], symbolArgNames :: [String],
-                 symbolReturnType :: String }
+  VariableType { symbolVarType :: String, genericType :: String } |
+  FunctionType { functionArgTypes :: [SymbolTableRow],
+                 functionArgNames :: [String],
+                 functionRet :: Maybe SymbolTableRow }
 
 data SymbolTableRow =
   SymbolTableRow {
@@ -59,28 +62,38 @@ data SymbolTableRow =
 
 initSymbolTableRow :: Map String SymbolTableRow -> SoliditySymbol
                       -> (String, SymbolTableRow)
-initSymbolTableRow _ sym@Function{ funcName = name, args = fArgs, returns = ret } =
+initSymbolTableRow decls sym@Function{ funcName=name, args=fArgs, returns=ret } =
   ( name,
     SymbolTableRow {
-       symbolType = FunctionType prettyArgs prettyArgNames prettyRet,
+       symbolType = FunctionType {
+          functionArgTypes = map snd rows,
+          functionArgNames = map fst rows,
+          functionRet =
+            (\x -> snd $ makeVariableSymbolTable decls [ Variable "" x ] !! 0) <$> ret
+          },
        storageSize = 0,
-       symbolMetadata = Just $
-                        FunctionMetadata {
-                          functionSelector = makeFunctionSelector sym
-                          }
+       symbolMetadata =
+         Just $ FunctionMetadata {
+           functionSelector =
+              concatMap toHex $ BS.unpack $ BS.take 4 $
+              BS.fromStrict $ SHA3.hash 256 $ BS.toStrict $
+              canonicalSignature sym,
+           functionSignature =
+             "function(" ++
+             (concat $ intersperse "," $ map (show . pretty . varType) fArgs) ++
+             ") returns (" ++ (maybe "" (show . pretty) ret) ++ ")"
+           }
        }
   )
-  where
-    prettyArgNames = map varName fArgs
-    prettyArgs = map (show . pretty . varType) fArgs
-    prettyRet = maybe "" (show . pretty) ret
-    makeFunctionSelector = concatMap (flip showHex "") . BS.unpack .
-      BS.take 4 . BS.fromStrict . SHA3.hash 256 . BS.toStrict . canonicalSignature 
+  where rows = makeVariableSymbolTable decls fArgs
          
 initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
   ( name,
     SymbolTableRow {
-       symbolType = VariableType $ show $ pretty vType,
+       symbolType = VariableType {
+          symbolVarType = show $ pretty vType,
+          genericType = symGenericType
+          },
        storageLocation =
          Just $ StorageLocation {
            storageKey = 0,
@@ -93,21 +106,21 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
   )
   where
     defaultDataReference = AddressReference $ getArrayReference 0
-    (symSize, symMetadata, symDefaultDataReference) = case vType of
-      Boolean -> (1, Nothing, NoReference)
-      Address -> (20, Nothing, NoReference)
-      SignedInt b -> (b, Nothing, NoReference)
-      UnsignedInt b -> (b, Nothing, NoReference)
-      FixedBytes b -> (b, Nothing, NoReference)
+    (symGenericType, symSize, symMetadata, symDefaultDataReference) = case vType of
+      Boolean -> ("Bool", 1, Nothing, NoReference)
+      Address -> ("Address", 20, Nothing, NoReference)
+      SignedInt b -> ("Int", b, Nothing, NoReference)
+      UnsignedInt b -> ("Int", b, Nothing, NoReference)
+      FixedBytes b -> ("Bytes", b, Nothing, NoReference)
       DynamicBytes ->
         let elemRow =
               snd $ head $ makeVariableSymbolTable decls
               [Variable { varName = "", varType = FixedBytes 1 }]
-        in (32, Just $ ArrayMetadata { elementStorage = Nothing,
+        in ("Bytes", 32, Just $ ArrayMetadata { elementStorage = Nothing,
                                        arrayLen = Nothing,
                                        newKeyAfterEvery = 32 },
             defaultDataReference)
-      String -> (32, Just $ ArrayMetadata { elementStorage = Nothing,
+      String -> ("String", 32, Just $ ArrayMetadata { elementStorage = Nothing,
                                             arrayLen = Nothing,
                                             newKeyAfterEvery = 32 },
                  defaultDataReference)
@@ -122,7 +135,7 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
               then (32 `quot` elemSize,
                     l `quot` newEach + (if l `rem` newEach == 0 then 0 else 1))
               else (1, l * (elemSize `quot` 32)) -- always have rem = 0
-        in (32 * numSlots, Just $
+        in ("Array", 32 * numSlots, Just $
                           ArrayMetadata { elementStorage = Just elemRow,
                                           arrayLen = Just l,
                                           newKeyAfterEvery = newEach},
@@ -131,7 +144,7 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
         let elemRow = snd $ head $ makeVariableSymbolTable decls
                       [Variable { varName = "", varType = t }]
             elemSize = storageSize elemRow
-        in (32, Just $ ArrayMetadata {
+        in ("Array", 32, Just $ ArrayMetadata {
                elementStorage = Just elemRow{ storageLocation = Nothing },
                arrayLen = Nothing,
                newKeyAfterEvery = max 1 $ 32 `quot` elemSize },
@@ -141,12 +154,12 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
                      [Variable { varName = "", varType = t }]
             keyRow = snd $ head $ makeVariableSymbolTable decls
                      [Variable { varName = "", varType = d }]
-        in (32, Just $ MappingMetadata {
+        in ("Mapping", 32, Just $ MappingMetadata {
                valueStorage = valRow{ storageLocation = Nothing},
                keyStorage = keyRow{ storageLocation = Nothing} }, 
             UndeterminedReference) 
       Enum names ->
-        (ceiling $ logBase 8 $ fromIntegral $ length names,
+        ("Enum", ceiling $ logBase 8 $ fromIntegral $ length names,
          Just $ EnumMetadata { enumNames0 = Map.fromList $ zip names [0 .. ] },
          NoReference)
       Struct fields ->
@@ -155,13 +168,14 @@ initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
               if null fieldRows
               then 0
               else 1 + (storageKey $ fromJust $ storageLocation $ snd $ last fieldRows)
-        in (32 * numSlots,
+        in ("Struct", 32 * numSlots,
             Just $ StructMetadata { fieldsTable = Map.fromList fieldRows },
             NoReference)
-      ContractT -> (20, Nothing, NoReference);
+      ContractT -> ("Contract", 20, Nothing, NoReference);
       UserDefined name ->
         let Just realTypeRow = Map.lookup name decls
-        in (storageSize realTypeRow, Nothing, NoReference)
+        in (genericType $ symbolType realTypeRow,
+            storageSize realTypeRow, Nothing, NoReference)
 
 makeVariableSymbolTable :: Map String SymbolTableRow -> [SoliditySymbol]
                            -> [(String, SymbolTableRow)]
@@ -185,15 +199,15 @@ makeSymbolTable decls syms = bimap makeStorage (map noStorage) varsFuncs
         dr0 = dataReference rowStorage
 
         lastOff = storageValOffset rowStorage
-        lastEndOff = lastOff + storageSize row
-        nextOff0 = lastEndOff + storageSize row'
+        thisOff0 = lastOff + storageSize row
+        nextOff0 = thisOff0 + storageSize row'
         lastKey = storageKey rowStorage
         (newKey, newOff) =
-          if nextOff0 > 32
+          if thisOff0 >= 32 || nextOff0 > 32
           then
             let rowIncr = max 1 $ storageSize row `quot` 32
             in (lastKey + rowIncr, 0)
-          else (lastKey, nextOff0)
+          else (lastKey, thisOff0)
       in (name, row' {
         storageLocation = Just $
            StorageLocation {
@@ -212,10 +226,11 @@ getArrayReference key =
   where zeros = BS.pack $ repeat 0
 
 toHex :: (Integral a, Show a) => a -> String
-toHex = ("0x" ++) . flip showHex ""
+toHex = flip showHex ""
 
 data SymbolTableRowView =
   SymbolTableRowView {
+    jsType :: String,
     bytesUsed :: String,
     solidityType :: String,
     atStorageKey :: Maybe String,
@@ -228,19 +243,18 @@ data SymbolTableRowView =
     structFields :: Maybe (Map String SymbolTableRowView),
     mappingValue :: Maybe SymbolTableRowView,
     mappingKey :: Maybe SymbolTableRowView,
-    functionDomain :: Maybe [String],
-    functionReturns :: Maybe String,
+    functionDomain :: Maybe [SymbolTableRowView],
     functionArgs :: Maybe [String],
+    functionReturns :: Maybe SymbolTableRowView,
     functionHash :: Maybe String
     }
 
 makeSymTabView :: SymbolTableRow -> SymbolTableRowView
 makeSymTabView row@SymbolTableRow{ symbolType = symtype@FunctionType {} } =
   SymbolTableRowView {
-    bytesUsed = "0x0",
-    solidityType =
-      "function(" ++ (concat $ intersperse "," $ symbolArgTypes symtype)
-      ++ ") returns (" ++ symbolReturnType symtype ++ ")",
+    bytesUsed = "0",
+    solidityType = functionSignature $ fromJust $ symbolMetadata row,
+    jsType = "Function",
     atStorageKey = Nothing,
     atStorageOffset = Nothing,
     arrayDataStart = Nothing,
@@ -251,15 +265,16 @@ makeSymTabView row@SymbolTableRow{ symbolType = symtype@FunctionType {} } =
     structFields = Nothing,
     mappingValue = Nothing,
     mappingKey = Nothing,
-    functionDomain = Just (symbolArgTypes symtype),
-    functionReturns = Just (symbolReturnType symtype),
-    functionArgs = Just (symbolArgNames symtype),
+    functionDomain = Just (map makeSymTabView $ functionArgTypes symtype),
+    functionArgs = Just (functionArgNames symtype),
+    functionReturns = makeSymTabView <$> (functionRet symtype),
     functionHash = Just (functionSelector $ fromJust $ symbolMetadata row)
     }                     
 
 makeSymTabView row@SymbolTableRow{ symbolType = VariableType {} } =
   let baseView = SymbolTableRowView {
         solidityType = symbolVarType $ symbolType row,
+        jsType = genericType $ symbolType row,
         atStorageKey = (toHex . storageKey) <$> storageLocation row,
         atStorageOffset = do
           storageLoc <- storageLocation row
@@ -278,7 +293,6 @@ makeSymTabView row@SymbolTableRow{ symbolType = VariableType {} } =
         mappingKey = Nothing,
         functionDomain = Nothing,
         functionReturns = Nothing,
-        functionArgs = Nothing,
         functionHash = Nothing
         }                       
   in case symbolMetadata row of
@@ -329,7 +343,7 @@ makeContractSymbolTable
     varRows = Map.fromList (vs ++ fs)
     table =
       let
-        isNotContract SymbolTableRow{symbolType = VariableType "contract"} = False
+        isNotContract SymbolTableRow{symbolType = VariableType "contract" _} = False
         isNotContract _ = True
       in (Map.filter isNotContract declRows) `Map.union` varRows
                         
