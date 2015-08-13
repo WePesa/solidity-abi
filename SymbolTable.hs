@@ -292,6 +292,7 @@ makeSymTabView row@SymbolTableRow{ symbolType = VariableType {} } =
         mappingValue = Nothing,
         mappingKey = Nothing,
         functionDomain = Nothing,
+        functionArgs = Nothing,
         functionReturns = Nothing,
         functionHash = Nothing
         }                       
