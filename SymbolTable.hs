@@ -198,8 +198,9 @@ makeSymbolTable decls syms = bimap makeStorage (map noStorage) varsFuncs
     makeStorage = scanl1 addStorage . map (initSymbolTableRow decls)
     addStorage (_,row) (name, row') =
       let
-        Just rowStorage = storageLocation row'
-        dr0 = dataReference rowStorage
+        Just rowStorage = storageLocation row
+        Just rowStorage' = storageLocation row'
+        dr0 = dataReference rowStorage'
 
         lastOff = storageValOffset rowStorage
         thisOff0 = lastOff + storageSize row
@@ -225,7 +226,7 @@ makeSymbolTable decls syms = bimap makeStorage (map noStorage) varsFuncs
 getArrayReference :: Integer -> String
 getArrayReference key =
   toHex (decode $ BS.fromStrict $ SHA3.hash 256 $ BS.toStrict $
-  BS.take 32 $ BS.append (encode key) zeros :: Word256)
+  BS.reverse $ BS.take 32 $ BS.append (BS.reverse $ encode key) zeros :: Word256)
   where zeros = BS.pack $ repeat 0
 
 toHex :: (Integral a, Show a) => a -> String
