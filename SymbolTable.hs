@@ -198,7 +198,7 @@ makeSymbolTable decls syms = bimap makeStorage (map noStorage) varsFuncs
     makeStorage = scanl1 addStorage . map (initSymbolTableRow decls)
     addStorage (_,row) (name, row') =
       let
-        Just rowStorage = storageLocation row
+        Just rowStorage = storageLocation row'
         dr0 = dataReference rowStorage
 
         lastOff = storageValOffset rowStorage
