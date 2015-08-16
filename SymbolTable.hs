@@ -75,7 +75,7 @@ initSymbolTableRow decls sym@Function{ funcName=name, args=fArgs, returns=ret } 
        symbolMetadata =
          Just $ FunctionMetadata {
            functionSelector =
-              concatMap toHex $ BS.unpack $ BS.take 4 $
+              concatMap toHex' $ BS.unpack $ BS.take 4 $
               BS.fromStrict $ SHA3.hash 256 $ BS.toStrict $
               canonicalSignature sym,
            functionSignature =
@@ -86,6 +86,9 @@ initSymbolTableRow decls sym@Function{ funcName=name, args=fArgs, returns=ret } 
        }
   )
   where rows = makeVariableSymbolTable decls fArgs
+        toHex' = zeroPad . toHex
+        zeroPad [c] = ['0',c]
+        zeroPad x = x
          
 initSymbolTableRow decls sym@Variable{ varName = name, varType = vType } =
   ( name,
