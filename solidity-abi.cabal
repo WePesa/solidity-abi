@@ -19,7 +19,7 @@ executable solidity-abi
   main-is:             Test.hs
   -- other-modules:       
   other-extensions:    FlexibleInstances, TemplateHaskell
-  build-depends:       base >=4.7 && <4.8,
+  build-depends:       base,
                        containers,
                        ethereum-util,
                        parsec,
@@ -41,7 +41,7 @@ library
                        Expression, Lexer, Modifiers, ParserTypes,
                        Pretty, Types
   other-extensions:    FlexibleInstances, TemplateHaskell
-  build-depends:       base >=4.7 && <4.8,
+  build-depends:       base,
                        containers,
                        ethereum-util,
                        parsec,
