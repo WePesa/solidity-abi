@@ -7,7 +7,6 @@ module Pretty (
 
 import Data.ByteString.Lazy (ByteString)
 import Data.List
-import Data.Maybe
 import qualified Data.Text.Lazy as T
 import Data.Text.Lazy.Encoding
 import Text.PrettyPrint
@@ -24,10 +23,10 @@ instance Pretty SolidityContract where
 instance Pretty SoliditySymbol where
   pretty (Variable name vType) =
     pretty vType <+> text name
-  pretty (Function name args returns) =
+  pretty (Function name args' returns') =
     text name <+> 
-    maybe empty (\r -> text "returns" <+> parens (pretty r)) returns <+>
-    (parens $ hsep $ punctuate (text ",") $ map pretty args)
+    maybe empty (\r -> text "returns" <+> parens (pretty r)) returns' <+>
+    (parens $ hsep $ punctuate (text ",") $ map pretty args')
 
 instance Pretty SolidityType where
   pretty Boolean = text "bool"
@@ -44,12 +43,12 @@ instance Pretty SolidityType where
   pretty (Mapping d c) =
     text "mapping" <+>
     (parens $ pretty d <+> text "=>" <+> pretty c)
-  pretty (Enum names) =
+  pretty (Enum names') =
     text "enum" <+>
     (braces $ hsep $ punctuate (text ",") $
-     [ text name <+> text "=" <+> integer n | (name, n) <- zip names [0..] ])
-  pretty (Struct fields) =
-    text "struct" <+> (braces $ hsep $ punctuate (text ";") $ map pretty fields)
+     [ text name <+> text "=" <+> integer n | (name, n) <- zip names' [0..] ])
+  pretty (Struct fields') =
+    text "struct" <+> (braces $ hsep $ punctuate (text ";") $ map pretty fields')
   pretty ContractT = text "contract"
   pretty (UserDefined name) = text name
 
@@ -57,7 +56,8 @@ instance Pretty [SolidityContract] where
   pretty = vcat . intersperse (text "") . map pretty
 
 canonicalSignature :: SoliditySymbol -> ByteString
-canonicalSignature (Function name args _)
+canonicalSignature (Function name args' _)
   = encodeUtf8 $ T.pack $ name ++ prettyArgTypes
   where prettyArgTypes = show $ parens $ hcat $ punctuate (text ",") $
-                         map (pretty . varType) args
+                         map (pretty . varType) args'
+canonicalSignature _ = undefined

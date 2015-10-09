@@ -1,6 +1,7 @@
+{-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
+
 module Declarations (solidityContract) where
 
-import Data.Functor
 import Data.Maybe
 import Text.Parsec
 
@@ -12,11 +13,11 @@ import Types
 solidityContract :: SolidityParser SolidityContract
 solidityContract = do
   reserved "contract"
-  contractName <- identifier
-  setContractName contractName
+  contractName' <- identifier
+  setContractName contractName'
   skipMany $ noneOf "{"
   contractSymbols <- catMaybes <$> (braces $ many solidityDeclaration)
-  return $ Contract contractName contractSymbols
+  return $ Contract contractName' contractSymbols
 
 -- Doesn't handle contract inheritance or contract types yet
 solidityDeclaration :: SolidityParser (Maybe SoliditySymbol)
@@ -60,9 +61,9 @@ functionDeclaration = do
   functionArgs <- map fromJust <$> (parens $ commaSep simpleVariableDeclaration)
   functionRet <- functionModifiers -- Only handles "returns" for now
   _ <- bracedCode <|> (semi >> return ()) -- Doesn't handle function bodies yet
-  contractName <- getContractName
+  contractName' <- getContractName
   return $ 
-    if isNothing functionName || fromJust functionName == contractName
+    if isNothing functionName || fromJust functionName == contractName'
     then Nothing
     else Just $ Function {
       funcName = fromJust functionName,

@@ -1,14 +1,9 @@
 module ParserTypes where
 
-import Control.Arrow
 import Data.ByteString (ByteString)
-import Data.Functor
 import qualified Data.Map.Strict as Map hiding (Map)
 import Data.Map.Strict (Map)
 import Text.Parsec
-import Text.PrettyPrint
-import Data.List
-import Data.Word
   
 data ContractDefinitions =
   ContractDefinitions {

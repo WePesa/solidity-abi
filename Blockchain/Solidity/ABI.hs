@@ -4,6 +4,5 @@ module Blockchain.Solidity.ABI (
   -- + JSON instances
   ) where
 
-import SymbolTable
-import JSON
 import Parser
+import JSON

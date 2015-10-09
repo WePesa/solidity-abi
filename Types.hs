@@ -1,7 +1,7 @@
+{-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
+
 module Types where
 
-import Data.Bool
-import Data.Functor
 import Data.Maybe
 import Text.Parsec
 
@@ -17,7 +17,7 @@ simpleType =
   simple "bool" Boolean <|>
   simple "address" Address <|>
   simple "string" String <|>
-  bytes <|>
+  bytes' <|>
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
   -- realSuffixed "ureal" UnsignedReal  <|>
@@ -30,17 +30,17 @@ simpleType =
     simple name nameType = do
       reserved name
       return nameType
-    bytes =
+    bytes' =
       simple "byte" (FixedBytes 1) <|>
       simple "bytes" DynamicBytes <|>
       (lexeme $ try $ do
         string "bytes"
-        let sizesS = reverse $ map show [1 .. 32]
+        let sizesS = reverse $ map show ([1 .. 32] :: [Integer])
         size <- read <$> (choice $ map (try . string) sizesS)
         return $ FixedBytes size)
     intSuffixed base baseType = lexeme $ try $ do
       string base
-      let sizesS = reverse $ map show [8, 16 .. 256]
+      let sizesS = reverse $ map show ([8, 16 .. 256] :: [Integer])
       sizeM <- optionMaybe $ choice $ map (try . string) sizesS
       let size = read $ fromMaybe (head sizesS) sizeM
       return $ baseType (size `quot` 8) -- in bytes

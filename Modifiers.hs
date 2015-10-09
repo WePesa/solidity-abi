@@ -1,6 +1,5 @@
 module Modifiers (typeModifiers, functionModifiers) where
 
-import Data.Functor
 import Data.Maybe
 import Text.Parsec
 import Text.Parsec.Perm
