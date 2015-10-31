@@ -21,7 +21,7 @@ executable solidity-abi
   other-extensions:    FlexibleInstances, TemplateHaskell
   build-depends:       base,
                        containers,
-                       ethereum-util,
+                       blockapps-util,
                        parsec,
                        bytestring,
                        text,
@@ -43,7 +43,7 @@ library
   other-extensions:    FlexibleInstances, TemplateHaskell
   build-depends:       base,
                        containers,
-                       ethereum-util,
+                       blockapps-util,
                        parsec,
                        bytestring,
                        text,
