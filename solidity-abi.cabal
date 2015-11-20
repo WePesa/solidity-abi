@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                solidity-abi
-version:             0.1.0.0
+version:             1.1.0
 -- synopsis:            
 -- description:         
 license:             Apache-2.0
@@ -16,30 +16,22 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 executable solidity-abi
-  main-is:             Test.hs
-  -- other-modules:       
+  main-is:             Main.hs
+  other-modules:       Blockchain.Ethereum.Solidity.Parse
+                       Blockchain.Ethereum.Solidity.Storage
   other-extensions:    FlexibleInstances, TemplateHaskell
   build-depends:       base >=4.7 && <4.8,
-                       containers,
-                       ethereum-util,
-                       parsec,
                        bytestring,
-                       text,
-                       pretty,
-                       aeson,
-                       aeson-pretty,
-                       cryptohash,
-                       bifunctors,
-                       binary
-  -- hs-source-dirs:      
+                       aeson-pretty
+  hs-source-dirs:      bin
   default-language:    Haskell2010
 
 library
-  exposed-modules:     Blockchain.Solidity.ABI
-  other-modules:       SymbolTable, Parser, JSON, Declarations,
-                       Expression, Lexer, Modifiers, ParserTypes,
-                       Pretty, Types
-  other-extensions:    FlexibleInstances, TemplateHaskell
+  exposed-modules:     Blockchain.Ethereum.Solidity.Storage
+                       Blockchain.Ethereum.Solidity.Parse
+  other-modules:       JSON, Pretty, SymbolTable,
+                       Parser, Declarations, Expression, Lexer,
+                       Modifiers, ParserTypes, Types
   build-depends:       base >=4.7 && <4.8,
                        containers,
                        ethereum-util,
@@ -52,5 +44,5 @@ library
                        cryptohash,
                        bifunctors,
                        binary
-  -- hs-source-dirs:      
+  hs-source-dirs:      parse
   default-language:    Haskell2010
