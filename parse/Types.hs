@@ -9,10 +9,10 @@ import Expression
 import Lexer
 import ParserTypes
 
-simpleTypeExpression :: SolidityParser SolidityType
+simpleTypeExpression :: SolidityParser SolidityBasicType
 simpleTypeExpression = try arrayType <|> simpleType <|> mappingType
 
-simpleType :: SolidityParser SolidityType
+simpleType :: SolidityParser SolidityBasicType
 simpleType =
   simple "bool" Boolean <|>
   simple "address" Address <|>
@@ -20,12 +20,7 @@ simpleType =
   bytes <|>
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
-  -- realSuffixed "ureal" UnsignedReal  <|>
-  -- realSuffixed "real" SignedReal     <|>
-  (do
-      alias <- identifier
-      --Just realType <- getFromTypeDefs alias -- Crashes if unknown
-      return $ UserDefined alias)
+  fmap TypeDef identifier
   where
     simple name nameType = do
       reserved name
@@ -44,17 +39,8 @@ simpleType =
       sizeM <- optionMaybe $ choice $ map (try . string) sizesS
       let size = read $ fromMaybe (head sizesS) sizeM
       return $ baseType (size `quot` 8) -- in bytes
-    -- realSuffixed base baseType = lexeme $ try $ do
-    --   string base
-    --   suffixM <- optionMaybe $ choice $ map try
-    --              [ string ((show n) ++ "x" ++ (show m)) >> return (size, m) |
-    --                n <- reverse [0, 8 .. 256],
-    --                m <- reverse [0, 8 .. 256 - n],
-    --                let size = n + m, size /= 0]
-    --   return $ uncurry baseType $
-    --     maybe (32,16) (\(s,m) -> (s `quot` 8, m `quot` 8)) suffixM -- in bytes
 
-arrayType :: SolidityParser SolidityType
+arrayType :: SolidityParser SolidityBasicType
 arrayType = do
   baseElemType <- simpleType <|> mappingType
   sizeList <- many1 $ brackets $ optionMaybe intExpr
@@ -62,7 +48,7 @@ arrayType = do
   where
     makeArrayType = foldl (\t -> maybe (DynamicArray t) (FixedArray t))
 
-mappingType :: SolidityParser SolidityType
+mappingType :: SolidityParser SolidityBasicType
 mappingType = do
   reserved "mapping"
   (mapDomT, mapCodT) <- parens $ do

@@ -1,125 +1,182 @@
 module Declarations (solidityContract) where
 
+import Data.Either
 import Data.Functor
 import Data.Maybe
+
 import Text.Parsec
+import Text.Parsec.Perm
 
 import Lexer
-import Modifiers
 import ParserTypes
 import Types
 
 solidityContract :: SolidityParser SolidityContract
 solidityContract = do
-  reserved "contract"
+  reserved "contract" <|> reserved "library"
   contractName <- identifier
   setContractName contractName
-  skipMany $ noneOf "{"
-  contractSymbols <- catMaybes <$> (braces $ many solidityDeclaration)
-  return $ Contract contractName contractSymbols
+  baseConstrs <- option [] $ do
+    reserved "is"
+    commaSep1 $ do
+      name <- identifier
+      consArgs <- parensCode
+      return (name, consArgs)
+  (contractTypes, contractObjs) <-
+    partitionEithers <$> (braces $ many solidityDeclaration)
+  return $ Contract {
+    contractName = contractName,
+    contractObjs = filter (tupleHasValue . objValueType) contractObjs,
+    contractTypes = contractTypes,
+    contractBaseNames = baseConstrs
+    }
 
--- Doesn't handle contract inheritance or contract types yet
-solidityDeclaration :: SolidityParser (Maybe SoliditySymbol)
+solidityDeclaration :: SolidityParser (Either SolidityTypeDef SolidityObjDef)
 solidityDeclaration =
-  structDeclaration <|>
-  enumDeclaration <|>
-  functionDeclaration <|>
-  modifierDeclaration <|>
-  eventDeclaration <|>
-  variableDeclaration
+  fmap Left structDeclaration <|>
+  fmap Left enumDeclaration <|>
+  fmap Right functionDeclaration <|>
+  fmap Right modifierDeclaration <|>
+  fmap Right eventDeclaration <|>
+  fmap Right variableDeclaration
 
-structDeclaration :: SolidityParser (Maybe SoliditySymbol)
+{- New types -}
+
+structDeclaration :: SolidityParser SolidityTypeDef
 structDeclaration = do
   reserved "struct"
   structName <- identifier
-  structFields <- catMaybes <$>
-                  (braces $ many1 $ do
-                      decl <- simpleVariableDeclaration
-                      semi
-                      return decl
-                  )
-  optional $
-    reserved "memory" <|>
-    reserved "storage" <|>
-    reserved "calldata"
-  addToTypeDefs structName (Struct structFields)
-  return Nothing
+  structFields <- braces $ many1 $ do
+    decl <- simpleVariableDeclaration
+    semi
+    return decl
+  return $ TypeDef {
+    typeName = structName,
+    typeDecl = Struct { fields = structFields }
+    }
 
-enumDeclaration :: SolidityParser (Maybe SoliditySymbol)
+enumDeclaration :: SolidityParser SolidityTypeDef
 enumDeclaration = do
   reserved "enum"
   enumName <- identifier
   enumFields <- braces $ commaSep1 identifier
-  addToTypeDefs enumName (Enum enumFields)
-  return Nothing
+  return $ TypeDef {
+    typeName = enumName,
+    typeDecl = Enum { names = enumFields}
+    }
 
-functionDeclaration :: SolidityParser (Maybe SoliditySymbol)
+{- Variables -}
+
+variableDeclaration :: SolidityParser SolidityObjDef
+variableDeclaration = do
+  vDecl <- simpleVariableDeclaration
+  vDefn <- optionMaybe $ do
+    reservedOp "="
+    many $ noneOf ";"
+  semi
+  return $ vDecl{objDefn = vDefn}
+
+simpleVariableDeclaration :: SolidityParser SolidityObjDef
+simpleVariableDeclaration = do
+  variableType <- simpleTypeExpression
+  variableVisible <- option True $
+                     (reserved "constant" >> return False) <|>
+                     (reserved "storage" >> return True) <|>
+                     (reserved "memory" >> return False)
+  variableName <- identifier
+  let objValueType =
+        if variableVisible
+        then SingleValue variableType
+        else NoValue
+  return $ ObjDef {
+    objName = variableName,
+    objValueType = objValueType,
+    objArgType = NoValue,
+    objDefn = ""
+    }
+
+{- Functions and function-like -}
+
+functionDeclaration :: SolidityParser SolidityObjDef
 functionDeclaration = do
   reserved "function"
-  functionName <- optionMaybe identifier
-  functionArgs <- map fromJust <$> (parens $ commaSep simpleVariableDeclaration)
-  functionRet <- functionModifiers -- Only handles "returns" for now
-  _ <- bracedCode <|> (semi >> return ()) -- Doesn't handle function bodies yet
+  functionName <- fromMaybe "" $ optionMaybe identifier
+  functionArgs <- tupleDeclaration
+  (functionRet, functionVisible, _, _) <- functionModifiers
+  functionBody <- bracedCode <|> (semi >> return "")
   contractName <- getContractName
-  return $ 
-    if isNothing functionName || fromJust functionName == contractName
-    then Nothing
-    else Just $ Function {
-      funcName = fromJust functionName,
-      args = functionArgs,
-      returns = functionRet
-      }
+  let objValueType =
+        if null functionName || not functionVisible ||
+           fromJust functionName == contractName
+        then NoValue
+        else TupleValue functionRet
+  return $ ObjDef {
+    objName = functionName,
+    objValueType = objValueType,
+    objArgType = functionArgs,
+    objDefn = functionBody
+    }
 
-bracedCode :: SolidityParser ()
-bracedCode = braces $ skipMany $ (skipMany1 $ noneOf "{}") <|> bracedCode
-
-eventDeclaration :: SolidityParser (Maybe SoliditySymbol)
+eventDeclaration :: SolidityParser SolidityObjDef
 eventDeclaration = do
   reserved "event"
-  _ <- identifier
-  parens $ commaSep simpleVariableDeclaration
+  name <- identifier
+  logs <- tupleDeclaration
   optional $ reserved "anonymous"
   semi
-  return Nothing    
+  return $ ObjDef {
+    objName = name,
+    objValueType = NoValue,
+    objArgType = logs,
+    objDefn = ""
+    }
 
-variableDeclaration :: SolidityParser (Maybe SoliditySymbol)
-variableDeclaration = do
-  vDecl <- simpleVariableDeclaration <|> inferTypeDeclaration
-  optional $ many $ noneOf ";" -- Doesn't handle assignments yet
-  semi
-  return vDecl
-
-simpleVariableDeclaration :: SolidityParser (Maybe SoliditySymbol)
-simpleVariableDeclaration = do
-  variableType <- typeExpression
-  variableName <- identifier
-  return $
-    (\vType -> 
-      Variable {
-        varName = variableName,
-        varType = vType
-        }
-    ) <$> variableType
-
-inferTypeDeclaration :: SolidityParser (Maybe SoliditySymbol)
-inferTypeDeclaration = do
-  reserved "var"
-  _ <- identifier
-  return Nothing -- This can't happen for a state variable
-
-modifierDeclaration :: SolidityParser (Maybe SoliditySymbol)
+modifierDeclaration :: SolidityParser SolidityObjDef
 modifierDeclaration = do
   reserved "modifier"
-  _ <- identifier
-  optional $ parens $ do
-    t <- simpleTypeExpression
-    optional identifier
-    return $ Just t
-  _ <- bracedCode
-  return Nothing
+  name <- identifier
+  args <- option NoValue tupleDeclaration
+  defn <- bracedCode
+  return $ ObjDef {
+    objName = name,
+    objValueType = NoValue,
+    objArgType = args,
+    objDefn = defn
+    }
 
-typeExpression :: SolidityParser (Maybe SolidityType)
-typeExpression = do
-  theType <- simpleTypeExpression
-  modifier <- typeModifiers -- Only handles "constant" for now
-  return $ maybe (Just theType) (const Nothing) modifier
+{- Not really declarations -}
+
+tupleDeclaration :: SolidityParser SolidityTuple
+tupleDeclaration = parens $ commaSep $ do
+  partType <- simpleTypeExpression
+  partName <- option "" identifier
+  return $ ObjDef {
+    objName = partName,
+    objValueType = partType,
+    objArgType = NoValue,
+    objDefn = ""
+    }
+
+functionModifiers :: SolidityParser (SolidityTuple, Bool, Bool, String)
+functionModifiers =
+  permute $
+  (\a b c d1 d2 d3 d4 -> (a, b, c, intercalate " " [d1, d2, d3, d4])) <$?>
+  (TupleValue [], returnModifier) <|?>
+  (True, visibilityModifier) <|?>
+  (True, mutabilityModifier) <|?>
+  ("", otherModifiers) <|?>
+  ("", otherModifiers) <|?>
+  ("", otherModifiers) <|?>
+  ("", otherModifiers) -- Fenceposts for the explicit modifiers
+  where
+    returnModifier =
+      reserved "returns" >> TupleValue <$> tupleDeclaration
+    visibilityModifier =
+      reserved "public" <|> reserved "private" <|>
+      reserved "internal" <|> reserved "external" <|>
+    mutabilityModifier =
+      reserved "constant"
+    otherModifiers = intercalate " " $ many $ do
+      name <- identifier
+      args <- optionMaybe parensCode
+      return $ name ++ maybe "" (\s -> "(" ++ s ++ ")") args

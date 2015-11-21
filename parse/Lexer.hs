@@ -4,6 +4,16 @@ import Text.Parsec
 import Text.Parsec.Language (javaStyle)
 import qualified Text.Parsec.Token as P
 
+bracedCode :: SolidityParser String
+bracedCode = braces $ fmap concat $ many $ (many $ noneOf "{}") <|> do
+  innerBraces <- bracedCode
+  return $ "{" ++ innerBraces ++ "}"
+
+parensCode :: SolidityParser String
+parensCode = parens $ fmap concat $ many $ (many $ noneOf "()") <|> do
+  innerParens <- parensCode
+  return $ "(" ++ innerParens ++ ")"
+
 reserved = P.reserved solidityLexer
 reservedOp = P.reservedOp solidityLexer
 identifier = P.identifier solidityLexer
@@ -17,12 +27,14 @@ commaSep1 = P.commaSep1 solidityLexer
 semi = P.semi solidityLexer
 semiSep = P.semiSep solidityLexer
 semiSep1 = P.semiSep1 solidityLexer
+stringLiteral = P.stringLiteral solidityLexer
 whiteSpace = P.whiteSpace solidityLexer
 
 solidityLexer = P.makeTokenParser solidityLanguage
 
 solidityLanguage = javaStyle {
   P.reservedNames = [
+     "import", "library",
      "contract", "is", "public", "internal", "private", "external", "import",
      "event", "indexed", "anonymous",
      "bool", "true", "false",
