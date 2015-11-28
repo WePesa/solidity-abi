@@ -21,6 +21,8 @@ setContractName = setState
 getContractName :: SolidityParser ContractName
 getContractName = getState
 
+type SolidityFile = [SolidityContract]
+
 data SolidityContract =
   Contract {
     contractName :: ContractName,
@@ -58,13 +60,14 @@ data SolidityBasicType =
   FixedBytes  { bytes :: Integer } |
   DynamicBytes|
   String |
-  FixedArray  { elemType :: SolidityType, fixedLength :: Integer } |
-  DynamicArray{ elemType :: SolidityType } |
-  Mapping     { domType  :: SolidityType, codType :: SolidityBasicType } |
+  FixedArray  { elemType :: SolidityBasicType, fixedLength :: Integer } |
+  DynamicArray{ elemType :: SolidityBasicType } |
+  Mapping     { domType  :: SolidityBasicType, codType :: SolidityBasicType } |
   TypeDef     { typeName :: Identifier }
+  
 data SolidityNewType =
   Enum        { names  :: [Identifier] } |
-  Struct      { fields :: [SoliditySymbol] } |
+  Struct      { fields :: [SolidityObjDef] } |
   ContractT
-
+  
 type SolidityValue = String

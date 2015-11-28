@@ -11,18 +11,18 @@ import Lexer
 import ParserTypes
 
 parse :: (SourceName -> String) -> SourceName -> String
-          -> Either ParseError (Set SolidityContract)
+          -> Either ParseError SolidityFile
 parse importReader sourceName sourceCode =
-  Set.fromList $ runParser (solidityFile importReader) "" sourceName sourceCode
+  runParser (solidityFile importReader) "" sourceName sourceCode
 
-solidityFile :: (SourceName -> String) -> SolidityParser [SolidityContract]
+solidityFile :: (SourceName -> String) -> SolidityParser SolidityFile
 solidityFile importReader = do
   whiteSpace
   files <- many (solidityImport <|> fmap [] solidityContract)
   eof
   return $ concat files
 
-solidityImport :: (SourceName -> String) -> SolidityParser [SolidityContract]
+solidityImport :: (SourceName -> String) -> SolidityParser SolidityFile
 solidityImport importReader =
   let saveFile = do
         curFile <- getInput
