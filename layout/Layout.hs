@@ -1,6 +1,6 @@
 module Layout (
   layout,
-  SolidityFileLayout, SoliditycontractsLayout,
+  SolidityFileLayout, SolidityContractsLayout,
   SolidityTypesLayout, SolidityObjsLayout,
   SolidityContractLayout(..), SolidityTypeLayout(..),
   SolidityObjLayout(..),

@@ -1,4 +1,11 @@
-module Parser (parse) where
+module Parser (
+  parse,
+  Identifier, ContractName, SourceCode,
+  SolidityFile, SolidityValue,
+  SolidityContract(..), SolidityObjDef(..),
+  SolidityTypeDef(..), SolidityTuple(..),
+  SolidityBasicType(..), SolidityNewType(..)
+  ) where
 
 import qualified Data.Set as Set
 import Data.Map (Map)

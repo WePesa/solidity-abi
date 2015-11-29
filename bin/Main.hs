@@ -1,11 +1,23 @@
 import Blockchain.Ethereum.Solidity.Parse
-import Blockchain.Ethereum.Solidity.Storage
+import Blockchain.Ethereum.Solidity.Layout
 
 import qualified Data.Aeson.Encode.Pretty as Aeson
 import qualified Data.ByteString.Lazy as BS
-import Data.Functor
-import Data.Map (fromList)
+
+import Data.List
+import Data.Maybe
+
+import qualified Data.Map as Map
+import Data.Map (Map)
+
+import System.Environment
 
 main = do
-  solidityCode <- getContents
-  either print (BS.putStr . Aeson.encodePretty) $ symtab <$> parse "stdin" solidityCode
+  sourceFiles <- getArgs
+  let (mainSrc, imports) =
+        fromMaybe (error "No source files given") $ uncons sourceFiles
+  sources <- sequence $ map readFile sourceFiles
+  let sourceMap = Map.fromList $ zip imports $ tail sources
+      doImport i = findWithDefault (error "Import not found") i sourceMap
+      parsed = parse doImport mainSrc $ head sources
+  either print (BS.putStr . Aeson.encodePretty) $ jsonABI <$> parsed
