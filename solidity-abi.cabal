@@ -17,11 +17,11 @@ cabal-version:       >=1.10
 
 executable solidity-abi
   main-is:             Main.hs
-  other-modules:       Blockchain.Ethereum.Solidity.Parse
-                       Blockchain.Ethereum.Solidity.External.JSON
-  build-depends:       base >=4.7 && <4.8,
+  build-depends:       base,
                        bytestring,
-                       aeson-pretty
+                       containers,
+                       aeson-pretty,
+                       solidity-abi
   hs-source-dirs:      bin
   default-language:    Haskell2010
 
@@ -30,17 +30,17 @@ library
                        Blockchain.Ethereum.Solidity.Parse
                        Blockchain.Ethereum.Solidity.External.JSON
                        Blockchain.Ethereum.Solidity.External.Contract
-  other-modules:       external/JSON
-                       external/Selector
-                       layout/Layout
-                       layout/LayoutTypes
-                       parse/Declarations
-                       parse/Expression
-                       parse/Lexer
-                       parse/Parser
-                       parse/ParserTypes
-                       parse/Types
-  build-depends:       base >=4.7 && <4.8,
+  other-modules:       JSON
+                       Selector
+                       Layout
+                       LayoutTypes
+                       Declarations
+                       Expression
+                       Lexer
+                       Parser
+                       ParserTypes
+                       Types
+  build-depends:       base,
                        containers,
                        parsec,
                        bytestring,
@@ -49,4 +49,7 @@ library
                        aeson,
                        cryptohash
   hs-source-dirs:      .
+                       external
+                       layout
+                       parse
   default-language:    Haskell2010

@@ -2,6 +2,7 @@ module Declarations (solidityContract) where
 
 import Data.Either
 import Data.Functor
+import Data.List
 import Data.Maybe
 
 import Text.Parsec
@@ -74,7 +75,7 @@ variableDeclaration = do
     reservedOp "="
     many $ noneOf ";"
   semi
-  return $ vDecl{objDefn = vDefn}
+  return $ maybe vDecl (\vD -> vDecl{objDefn = vD}) vDefn
 
 simpleVariableDeclaration :: SolidityParser SolidityObjDef
 simpleVariableDeclaration = do
@@ -100,16 +101,16 @@ simpleVariableDeclaration = do
 functionDeclaration :: SolidityParser SolidityObjDef
 functionDeclaration = do
   reserved "function"
-  functionName <- fromMaybe "" $ optionMaybe identifier
+  functionName <- fromMaybe "" <$> optionMaybe identifier
   functionArgs <- tupleDeclaration
   (functionRet, functionVisible, _, _) <- functionModifiers
   functionBody <- bracedCode <|> (semi >> return "")
   contractName <- getContractName
   let objValueType =
         if null functionName || not functionVisible ||
-           fromJust functionName == contractName
+           functionName == contractName
         then NoValue
-        else TupleValue functionRet
+        else functionRet
   return $ ObjDef {
     objName = functionName,
     objValueType = objValueType,
@@ -147,12 +148,12 @@ modifierDeclaration = do
 {- Not really declarations -}
 
 tupleDeclaration :: SolidityParser SolidityTuple
-tupleDeclaration = parens $ commaSep $ do
+tupleDeclaration = fmap TupleValue $ parens $ commaSep $ do
   partType <- simpleTypeExpression
   partName <- option "" identifier
   return $ ObjDef {
     objName = partName,
-    objValueType = partType,
+    objValueType = SingleValue partType,
     objArgType = NoValue,
     objDefn = ""
     }
@@ -170,13 +171,13 @@ functionModifiers =
   ("", otherModifiers) -- Fenceposts for the explicit modifiers
   where
     returnModifier =
-      reserved "returns" >> TupleValue <$> tupleDeclaration
+      reserved "returns" >> tupleDeclaration
     visibilityModifier =
-      reserved "public" <|> reserved "private" <|>
-      reserved "internal" <|> reserved "external" <|>
+      ((reserved "public" <|> reserved "external") >> return True) <|>
+      ((reserved "internal" <|> reserved "private") >> return False)
     mutabilityModifier =
-      reserved "constant"
-    otherModifiers = intercalate " " $ many $ do
+      reserved "constant" >> return False
+    otherModifiers = fmap (intercalate " ") $ many $ do
       name <- identifier
       args <- optionMaybe parensCode
       return $ name ++ maybe "" (\s -> "(" ++ s ++ ")") args

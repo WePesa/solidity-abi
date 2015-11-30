@@ -1,9 +1,15 @@
 module LayoutTypes where
+
+import qualified Data.Map as Map
+import Data.Map (Map)
+
 import Numeric.Natural
+
+import ParserTypes
 
 type IdentT a = Map Identifier a
 
-type SolidityContractDef =
+data SolidityContractDef =
   ContractDef {
     objsDef :: SolidityObjsDef,
     typesDef :: SolidityTypesDef,
@@ -17,7 +23,7 @@ makeContractsDef :: [SolidityContract] -> SolidityContractsDef
 makeContractsDef contracts = Map.fromList $ map contractToDef contracts
   where contractToDef (Contract name objs types bases) =
           (name, ContractDef {
-              objsDef = makeObjsDef objs,
+              objsDef = objs,
               typesDef = makeTypesDef types,
               baseNames = map fst bases
               })
@@ -33,7 +39,7 @@ type SolidityTypesLayout = IdentT SolidityTypeLayout
 
 data SolidityContractLayout =
   ContractLayout {
-    objsLayout :: SolidityObjsLayout
+    objsLayout :: SolidityObjsLayout,
     typesLayout :: SolidityTypesLayout
     }
 

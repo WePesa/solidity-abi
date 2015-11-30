@@ -9,6 +9,7 @@ import Text.Parsec
 import Text.PrettyPrint
 import Data.List
 import Data.Word
+import Numeric.Natural
 
 type Identifier = String
 type ContractName = Identifier
@@ -55,15 +56,15 @@ tupleHasValue _ = True
 data SolidityBasicType =
   Boolean |
   Address |
-  SignedInt   { bytes :: Integer } |
-  UnsignedInt { bytes :: Integer } |
-  FixedBytes  { bytes :: Integer } |
+  SignedInt   { bytes :: Natural } |
+  UnsignedInt { bytes :: Natural } |
+  FixedBytes  { bytes :: Natural } |
   DynamicBytes|
   String |
-  FixedArray  { elemType :: SolidityBasicType, fixedLength :: Integer } |
+  FixedArray  { elemType :: SolidityBasicType, fixedLength :: Natural } |
   DynamicArray{ elemType :: SolidityBasicType } |
   Mapping     { domType  :: SolidityBasicType, codType :: SolidityBasicType } |
-  TypeDef     { typeName :: Identifier }
+  Typedef     { typedefName :: Identifier }
   
 data SolidityNewType =
   Enum        { names  :: [Identifier] } |

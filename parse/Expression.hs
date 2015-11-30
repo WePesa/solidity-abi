@@ -3,14 +3,19 @@ module Expression where
 import Text.Parsec
 import Text.Parsec.Expr
 
+import Data.Functor.Identity
+import Numeric.Natural
+
 import Lexer
 import ParserTypes
 
-intExpr :: SolidityParser Integer
+intExpr :: (Integral a) => SolidityParser a
 intExpr = buildExpressionParser intTable intTerm
 
-intTerm =  parens intTerm <|> natural
+intTerm :: (Integral a) => SolidityParser a
+intTerm =  parens intTerm <|> fmap fromIntegral natural
 
+intTable :: (Integral a) => OperatorTable String u Identity a
 intTable = [ [prefix "-" negate, prefix "+" id ],
              [binary "**" (^) AssocRight],
              [binary "*" (*) AssocLeft,

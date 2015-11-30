@@ -1,3 +1,3 @@
-module Blockchain.Ethereum.Solidity.Storage (layout) where
+module Blockchain.Ethereum.Solidity.Layout (layout) where
 
 import Layout

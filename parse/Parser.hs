@@ -10,7 +10,7 @@ module Parser (
 import qualified Data.Set as Set
 import Data.Map (Map)
 
-import Text.Parsec
+import Text.Parsec hiding (parse)
 import Text.Parsec.Pos
 
 import Declarations
@@ -25,7 +25,7 @@ parse importReader sourceName sourceCode =
 solidityFile :: (SourceName -> String) -> SolidityParser SolidityFile
 solidityFile importReader = do
   whiteSpace
-  files <- many (solidityImport <|> fmap [] solidityContract)
+  files <- many (solidityImport importReader <|> fmap return solidityContract)
   eof
   return $ concat files
 
@@ -36,18 +36,18 @@ solidityImport importReader =
         curPos <- getPosition
         return (curFile, curPos)
       newFile name = do
-        setPosition initialPos
+        setPosition $ initialPos name
         setInput $ importReader name
         solidityFile importReader
-      restoreFile (fileIn, filePos) = 
-        setPosition fileIn
-        setInput filePos
+      restoreFile (fileIn, filePos) = do
+        setPosition filePos
+        setInput fileIn
   in do
     reserved "import"
     importName <- soliditySourceFilename
     thisFile <- saveFile
     importFile <- newFile importName
-    restoreFile thisfile
+    restoreFile thisFile
     return importFile
   
 soliditySourceFilename :: SolidityParser SourceName

@@ -30,14 +30,14 @@ makeContractLayout contracts (ContractDef objs types baseNames) =
     typesLayout = typesL
     }
 
-makeTypeLayout :: SolidityContractsDef -> SolidityTypesLayout -> SolidityTypeDef
+makeTypeLayout :: SolidityContractsDef -> SolidityTypesLayout -> SolidityNewType
                    -> SolidityTypeLayout
-makeTypeLayout contracts typesL (TypeDef _ t) = case t of
+makeTypeLayout contracts typesL t = case t of
   ContractT -> ContractTLayout addressBytes
   Enum names -> EnumLayout (ceiling $ logBase 8 $ fromIntegral $ length names)
-  Struct _ fields ->
+  Struct fields ->
     let objsLayout = makeObjsLayout contracts typesL fields
-        lastEnd = objEndBytes $ last objsLayout
+        lastEnd = objEndBytes $ objsLayout Map.! (objName $ last fields)
         usedBytes = nextLayoutStart lastEnd keyBytes        
     in StructLayout objsLayout usedBytes
 
@@ -58,7 +58,7 @@ makeObjLayout contracts typesL lastEnd obj = case obj of
       objEndBytes = startBytes + usedBytes t
       }
     where
-      startBytes = nextLayoutStart lastEnd usedBytes
+      startBytes = nextLayoutStart lastEnd $ usedBytes t
       usedBytes ty = case ty of
         Boolean -> 1
         Address -> addressBytes
@@ -77,7 +77,7 @@ makeObjLayout contracts typesL lastEnd obj = case obj of
               else (1, l * (elemSize `quot` 32)) -- always have rem = 0
         DynamicArray _ -> keyBytes
         Mapping _ _ -> keyBytes
-        TypeDef name -> typeUsedBytes $ findWithDefault err name typesL
+        Typedef name -> typeUsedBytes $ Map.findWithDefault err name typesL
           where err = error $
                       "Name " ++ name ++ " is not a user-defined type or contract"
   _ -> Nothing
