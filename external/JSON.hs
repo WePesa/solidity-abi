@@ -5,6 +5,7 @@ import Data.Aeson hiding (String)
 import qualified Data.Aeson as Aeson (Value(String))
 import Data.Aeson.Types (Pair)
 import qualified Data.Map as Map
+import qualified Data.List as List
 import Data.Maybe
 import Data.String
 import Data.Text (Text)
@@ -29,7 +30,8 @@ contractABI fL (Contract name objs types baseNames) =
       (nonempty (pair "vars") $ varsABI (objsLayout $ fL Map.! name) objs) ++
       (nonempty (pair "funcs") $ funcsABI objs) ++
       (nonempty (pair "types") $ typesABI (typesLayout $ fL Map.! name) types) ++
-      (nonempty (pair "bases") $ toJSON $ map fst baseNames)
+      (nonempty (pair "bases") $ toJSON $ map fst baseNames) ++
+      (nonempty (pair "constr") $ constrABI name objs)
   where
     nonempty :: (Value -> Pair) -> Value -> [Pair]
     nonempty f ob@(Object o) =
@@ -56,6 +58,16 @@ funcsABI objs = object $ catMaybes $ map funcABI objs
 typesABI :: SolidityTypesLayout -> [SolidityTypeDef] -> Value
 typesABI layout types = object $ catMaybes $
                         map (\t -> typeABI (layout Map.! typeName t) t) types
+
+constrABI :: Identifier -> [SolidityObjDef] -> Value
+constrABI name objs = object $ maybe [] listABI argsM
+  where
+    argsM = getArgs =<< List.find isConstr objs
+    isConstr (ObjDef name' (SingleValue (Typedef name'')) (TupleValue _) _)
+      | name == name' && name == name'' = True
+    isConstr _ = False
+    getArgs (ObjDef _ _ (TupleValue args) _) = Just args
+    getArgs _ = Nothing
 
 listABI :: [SolidityObjDef] -> [Pair]
 listABI objs = do

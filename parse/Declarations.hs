@@ -109,11 +109,10 @@ functionDeclaration = do
   (functionRet, functionVisible, _, _) <- functionModifiers
   functionBody <- bracedCode <|> (semi >> return "")
   contractName <- getContractName
-  let objValueType =
-        if null functionName || not functionVisible ||
-           functionName == contractName
-        then NoValue
-        else functionRet
+  let objValueType = case () of
+        _ | null functionName || not functionVisible -> NoValue
+        _ | functionName == contractName -> SingleValue $ Typedef contractName
+        _ | otherwise -> functionRet
   return $ ObjDef {
     objName = functionName,
     objValueType = objValueType,
