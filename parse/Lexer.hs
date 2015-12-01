@@ -9,12 +9,12 @@ import Numeric.Natural
 import ParserTypes
 
 bracedCode :: SolidityParser String
-bracedCode = braces $ fmap concat $ many $ (many $ noneOf "{}") <|> do
+bracedCode = braces $ fmap concat $ many $ (many1 $ noneOf "{}") <|> do
   innerBraces <- bracedCode
   return $ "{" ++ innerBraces ++ "}"
 
 parensCode :: SolidityParser String
-parensCode = parens $ fmap concat $ many $ (many $ noneOf "()") <|> do
+parensCode = parens $ fmap concat $ many $ (many1 $ noneOf "()") <|> do
   innerParens <- parensCode
   return $ "(" ++ innerParens ++ ")"
 

@@ -47,7 +47,9 @@ library
                        text,
                        pretty,
                        aeson,
-                       cryptohash
+                       cryptohash,
+                       unordered-containers,
+                       vector
   hs-source-dirs:      .
                        external
                        layout

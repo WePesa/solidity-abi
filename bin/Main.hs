@@ -14,10 +14,16 @@ import System.Environment
 
 main = do
   sourceFiles <- getArgs
-  let (mainSrc, imports) =
+  let (mainFile, imports) =
         fromMaybe (error "No source files given") $ uncons sourceFiles
-  sources <- sequence $ map readFile sourceFiles
-  let sourceMap = Map.fromList $ zip imports $ tail sources
-      doImport i = Map.findWithDefault (error "Import not found") i sourceMap
-      parsed = parse doImport mainSrc $ head sources
+  (mainSrc, sourceMap) <-
+    if mainFile == "--stdin"
+    then do
+      s <- getContents
+      return (s, Map.empty)
+    else do
+      sources <- sequence $ map readFile sourceFiles
+      return (head sources, Map.fromList $ zip imports $ tail sources)
+  let doImport i = Map.findWithDefault (error "Import not found") i sourceMap
+      parsed = parse doImport mainFile mainSrc
   either print (BS.putStr . Aeson.encodePretty) $ jsonABI <$> parsed

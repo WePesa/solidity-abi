@@ -1,5 +1,5 @@
 contract DeleteExample {
-  uint data
+  uint data;
   uint[] dataArray;
   function f() {
     uint x = data;

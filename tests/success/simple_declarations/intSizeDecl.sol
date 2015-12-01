@@ -1,3 +1,3 @@
 contract Contract {
-  int64 int64Var.sol;
+  int64 int64Var;
 }

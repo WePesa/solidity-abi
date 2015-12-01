@@ -21,7 +21,7 @@ solidityContract = do
     reserved "is"
     commaSep1 $ do
       name <- identifier
-      consArgs <- parensCode
+      consArgs <- option "" parensCode
       return (name, consArgs)
   (contractTypes, contractObjs) <-
     partitionEithers <$> (braces $ many solidityDeclaration)
@@ -83,7 +83,10 @@ simpleVariableDeclaration = do
   variableVisible <- option True $
                      (reserved "constant" >> return False) <|>
                      (reserved "storage" >> return True) <|>
-                     (reserved "memory" >> return False)
+                     (reserved "memory" >> return False) <|>
+                     (reserved "public" >> return True) <|>
+                     (reserved "private" >> return False) <|>
+                     (reserved "internal" >> return False)
   variableName <- identifier
   let objValueType =
         if variableVisible
@@ -150,6 +153,7 @@ modifierDeclaration = do
 tupleDeclaration :: SolidityParser SolidityTuple
 tupleDeclaration = fmap TupleValue $ parens $ commaSep $ do
   partType <- simpleTypeExpression
+  optional $ reserved "indexed"
   partName <- option "" identifier
   return $ ObjDef {
     objName = partName,

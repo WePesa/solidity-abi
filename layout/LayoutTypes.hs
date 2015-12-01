@@ -24,9 +24,12 @@ makeContractsDef contracts = Map.fromList $ map contractToDef contracts
   where contractToDef (Contract name objs types bases) =
           (name, ContractDef {
               objsDef = objs,
-              typesDef = makeTypesDef types,
+              typesDef = makeTypesDef $ types ++ contractTypes,
               baseNames = map fst bases
               })
+        contractTypes = do
+          Contract{contractName = name} <- contracts
+          return $ TypeDef name ContractT
 
 makeTypesDef :: [SolidityTypeDef] -> SolidityTypesDef
 makeTypesDef types = Map.fromList $ map typeToTuple types
@@ -48,6 +51,7 @@ data SolidityObjLayout =
     objStartBytes :: StorageBytes,
     objEndBytes :: StorageBytes
     }
+  deriving (Show)
 
 data SolidityTypeLayout =
   StructLayout {

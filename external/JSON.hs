@@ -2,11 +2,16 @@
 module JSON (jsonABI) where
 
 import Data.Aeson hiding (String)
+import qualified Data.Aeson as Aeson (Value(String))
 import Data.Aeson.Types (Pair)
 import qualified Data.Map as Map
 import Data.Maybe
 import Data.String
 import Data.Text (Text)
+
+import qualified Data.HashMap.Strict as HashMap
+import qualified Data.Vector as Vector
+import qualified Data.Text as Text
 
 import Layout
 import ParserTypes
@@ -20,16 +25,30 @@ jsonABI f = object $ map (contractABI $ layout f) f
 
 contractABI :: SolidityFileLayout -> SolidityContract -> Pair
 contractABI fL (Contract name objs types baseNames) =
-  pair name $ object [
-      pair "vars" $ varsABI (objsLayout $ fL Map.! name) objs,
-      pair "funcs" $ funcsABI objs,
-      pair "types" $ typesABI (typesLayout $ fL Map.! name) types,
-      pair "bases" $ toJSON $ map fst baseNames
-      ]
+  pair name $ object $
+      (nonempty (pair "vars") $ varsABI (objsLayout $ fL Map.! name) objs) ++
+      (nonempty (pair "funcs") $ funcsABI objs) ++
+      (nonempty (pair "types") $ typesABI (typesLayout $ fL Map.! name) types) ++
+      (nonempty (pair "bases") $ toJSON $ map fst baseNames)
+  where
+    nonempty :: (Value -> Pair) -> Value -> [Pair]
+    nonempty f ob@(Object o) =
+      if HashMap.null o
+      then []
+      else [f ob]
+    nonempty f ar@(Array a) =
+      if Vector.null a
+      then []
+      else [f ar]
+    nonempty f st@(Aeson.String s) =
+      if Text.null s
+      then []
+      else [f st]
+    nonempty f Null = []
+    nonempty f x = [f x]
 
 varsABI :: SolidityObjsLayout -> [SolidityObjDef] -> Value
-varsABI layout objs = object $ catMaybes $
-                      map (\o -> varABI (layout Map.! objName o) o) objs
+varsABI layout objs = object $ catMaybes $ map (\o -> varABI layout o) objs
 
 funcsABI :: [SolidityObjDef] -> Value
 funcsABI objs = object $ catMaybes $ map funcABI objs
@@ -39,15 +58,19 @@ typesABI layout types = object $ catMaybes $
                         map (\t -> typeABI (layout Map.! typeName t) t) types
 
 listABI :: [SolidityObjDef] -> [Pair]
-listABI objs = map (uncurry pair) $ catMaybes $ map objABI objs
+listABI objs = do
+  (i, (oName, oABI)) <- zip [1::Integer ..] $ fromMaybe [] $ mapM objABI objs
+  let realName = if null oName then "#" ++ show i else oName
+  return $ pair realName $ object $ (pair "index" i) : oABI
 
-varABI :: SolidityObjLayout -> SolidityObjDef -> Maybe Pair
-varABI (ObjLayout oB _) obj = do
+varABI :: SolidityObjsLayout -> SolidityObjDef -> Maybe Pair
+varABI layout obj = do
   (name, tABI) <- objABI obj
+  let oB = objStartBytes $ layout Map.! objName obj
   return $ pair name $ object $ pair "atBytes" (toInteger oB) : tABI
 
 funcABI :: SolidityObjDef -> Maybe Pair
-funcABI f@(ObjDef name (TupleValue vals) (TupleValue args) _) =
+funcABI (ObjDef name (TupleValue vals) (TupleValue args) _) =
   Just $ pair name $ object [
            pair "selector" $ selector name args vals,
            lpair "args" args,
@@ -57,9 +80,16 @@ funcABI _ = Nothing
 
 typeABI :: SolidityTypeLayout -> SolidityTypeDef -> Maybe Pair
 typeABI (StructLayout fieldsL _) (TypeDef name (Struct fields)) =
-  Just $ pair name $ varsABI fieldsL fields
+  Just $ pair name $ object [
+    pair "type" "Struct",
+    pair "fields" $ varsABI fieldsL fields
+    ]
 typeABI (EnumLayout tB) (TypeDef name (Enum names)) =
-  Just $ pair name $ object $ [pair "bytes" $ toInteger tB, pair "names" names]
+  Just $ pair name $ object $ [
+    pair "type" "Enum",
+    pair "bytes" $ toInteger tB,
+    pair "names" names
+    ]
 typeABI _ _ = Nothing
 
 objABI :: SolidityObjDef -> Maybe (String, [Pair])
@@ -107,8 +137,7 @@ basicTypeABI (Mapping dT cT) = [
   tpair "value" cT
   ]
 basicTypeABI (Typedef name) = [
-  pair "type" name,
-  pair "typeDef" True
+  pair "typedef" name
   ]
 
 pair :: (ToJSON a) => String -> a -> Pair
