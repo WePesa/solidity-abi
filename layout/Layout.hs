@@ -23,7 +23,7 @@ makeContractsLayout contracts = Map.map (makeContractLayout contracts) contracts
 
 makeContractLayout :: SolidityContractsDef -> SolidityContractDef
                       -> SolidityContractLayout
-makeContractLayout contracts (ContractDef objs types baseNames) =
+makeContractLayout contracts (ContractDef objs types _) =
   let typesL = Map.map (makeTypeLayout contracts typesL) types
   in ContractLayout {
     objsLayout = makeObjsLayout contracts typesL objs,

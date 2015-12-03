@@ -47,7 +47,6 @@ contract = {
      "type name" : type defn,
      ...
    },
-   "bases" : [ "inherited contract", ... ]
    "constr" : function args
 }
 ```
