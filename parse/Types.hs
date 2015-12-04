@@ -20,7 +20,8 @@ simpleType =
   bytes <|>
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
-  fmap Typedef identifier
+  fmap (Typedef . concat) (sequence [identifier, dot, identifier]) <|>
+  fmap Typedef identifier -- must come after the "using" type above
   where
     simple name nameType = do
       reserved name

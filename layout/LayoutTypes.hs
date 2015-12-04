@@ -107,6 +107,9 @@ data SolidityTypeLayout =
   EnumLayout {
     typeUsedBytes :: StorageBytes
     } |
+  UsingLayout {
+    typeUsedBytes :: StorageBytes
+    } |
   ContractTLayout {
     typeUsedBytes :: StorageBytes
     }

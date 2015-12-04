@@ -104,6 +104,12 @@ typeABI (EnumLayout tB) name (Enum names) =
     pair "bytes" $ toInteger tB,
     pair "names" names
     ]
+typeABI (UsingLayout tB) name (Using contract typeName) =
+  Just $ pair name $ object $ [
+    pair "type" "Using",
+    pair "usingContract" contract,
+    pair "usingType" typeName
+    ]
 typeABI _ _ _ = Nothing
 
 objABI :: SolidityObjDef -> Maybe (String, [Pair])

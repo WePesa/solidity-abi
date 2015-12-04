@@ -28,6 +28,7 @@ parens = P.parens solidityLexer
 brackets = P.brackets solidityLexer
 commaSep = P.commaSep solidityLexer
 commaSep1 = P.commaSep1 solidityLexer
+dot = P.dot solidityLexer
 semi = P.semi solidityLexer
 semiSep = P.semiSep solidityLexer
 semiSep1 = P.semiSep1 solidityLexer
@@ -38,7 +39,7 @@ solidityLexer = P.makeTokenParser solidityLanguage
 
 solidityLanguage = javaStyle {
   P.reservedNames = [
-     "import", "library",
+     "import", "library", "using",
      "contract", "is", "public", "internal", "private", "external", "import",
      "event", "indexed", "anonymous",
      "bool", "true", "false",

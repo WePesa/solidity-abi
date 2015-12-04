@@ -19,39 +19,41 @@ layout :: SolidityFile -> SolidityFileLayout
 layout = makeContractsLayout . makeContractsDef
 
 makeContractsLayout :: SolidityContractsDef -> SolidityContractsLayout
-makeContractsLayout contracts = Map.map (makeContractLayout contracts) contracts
+makeContractsLayout contracts = contractsL
+  where contractsL = Map.map (makeContractLayout contractsL) contracts
 
-makeContractLayout :: SolidityContractsDef -> SolidityContractDef
+makeContractLayout :: SolidityContractsLayout -> SolidityContractDef
                       -> SolidityContractLayout
-makeContractLayout contracts (ContractDef objs types _) =
-  let typesL = Map.map (makeTypeLayout contracts typesL) types
-  in ContractLayout {
-    objsLayout = makeObjsLayout contracts typesL objs,
+makeContractLayout contractsL (ContractDef objs types _) =
+  ContractLayout {
+    objsLayout = makeObjsLayout typesL objs,
     typesLayout = typesL
-    }
+    }      
+  where typesL = Map.map (makeTypeLayout contractsL typesL) types
 
-makeTypeLayout :: SolidityContractsDef -> SolidityTypesLayout -> SolidityNewType
+makeTypeLayout :: SolidityContractsLayout -> SolidityTypesLayout -> SolidityNewType
                    -> SolidityTypeLayout
-makeTypeLayout contracts typesL t = case t of
+makeTypeLayout contractsL typesL t = case t of
   ContractT -> ContractTLayout addressBytes
   Enum names -> EnumLayout (ceiling $ logBase 8 $ fromIntegral $ length names)
+  Using contract name ->
+    UsingLayout (typeUsedBytes $ typesLayout (contractsL Map.! contract) Map.! name)
   Struct fields ->
-    let objsLayout = makeObjsLayout contracts typesL fields
+    let objsLayout = makeObjsLayout typesL fields
         lastEnd = objEndBytes $ objsLayout Map.! (objName $ last fields)
         usedBytes = nextLayoutStart lastEnd keyBytes        
     in StructLayout objsLayout usedBytes
 
-makeObjsLayout :: SolidityContractsDef -> SolidityTypesLayout -> [SolidityObjDef]
-                  -> SolidityObjsLayout
-makeObjsLayout contracts typesL objs =
-  let objsLf = catMaybes $ map (makeObjLayout contracts typesL) objs
+makeObjsLayout :: SolidityTypesLayout -> [SolidityObjDef] -> SolidityObjsLayout
+makeObjsLayout typesL objs =
+  let objsLf = catMaybes $ map (makeObjLayout typesL) objs
       objEnds = 0:map (objEndBytes . snd) objsL
       objsL = zipWith ($) objsLf objEnds
   in Map.fromList  objsL
 
-makeObjLayout :: SolidityContractsDef -> SolidityTypesLayout -> SolidityObjDef
+makeObjLayout :: SolidityTypesLayout -> SolidityObjDef
                  -> Maybe (StorageBytes -> (Identifier, SolidityObjLayout))
-makeObjLayout contracts typesL obj = case obj of
+makeObjLayout typesL obj = case obj of
   ObjDef{objName = name, objArgType = NoValue, objValueType = SingleValue t} ->
     Just $ \lastEnd ->
     let startBytes = nextLayoutStart lastEnd $ usedBytes t

@@ -76,6 +76,7 @@ data SolidityBasicType =
 data SolidityNewType =
   Enum        { names  :: [Identifier] } |
   Struct      { fields :: [SolidityObjDef] } |
+  Using       { usingContract :: ContractName, usingType :: Identifier } |
   ContractT
   deriving (Show)
   

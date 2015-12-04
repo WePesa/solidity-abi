@@ -6,6 +6,7 @@ import Data.List
 import Data.Maybe
 
 import Text.Parsec
+import Text.Parsec.Char
 import Text.Parsec.Perm
 
 import Lexer
@@ -36,6 +37,7 @@ solidityDeclaration :: SolidityParser (Either SolidityTypeDef SolidityObjDef)
 solidityDeclaration =
   fmap Left structDeclaration <|>
   fmap Left enumDeclaration <|>
+  fmap Left usingDeclaration <|>
   fmap Right functionDeclaration <|>
   fmap Right modifierDeclaration <|>
   fmap Right eventDeclaration <|>
@@ -64,6 +66,20 @@ enumDeclaration = do
   return $ TypeDef {
     typeName = enumName,
     typeDecl = Enum { names = enumFields}
+    }
+
+usingDeclaration :: SolidityParser SolidityTypeDef
+usingDeclaration = do
+  reserved "using"
+  usingContract <- identifier
+  reserved "for"
+  string usingContract
+  dot
+  usingName <- identifier
+  semi
+  return $ TypeDef {
+    typeName = usingContract ++ "." ++ usingName,
+    typeDecl = Using { usingContract = usingContract, usingType = usingName }
     }
 
 {- Variables -}
