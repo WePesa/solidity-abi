@@ -3,6 +3,8 @@
 A partial Solidity parser that emits a JSON object describing the
 top-level definitions in a Solidity file.
 
+This version is compatible with solc-0.2.0.
+
 ## Usage
 
 ```sh
@@ -135,5 +137,9 @@ type defn = {
   "type" : "Enum",
   "bytes" : decimal integer (smallest number of bytes holding all values),
   "names" : ["named value", ... ]
+  // "using"
+  "type" : "Using",
+  "usingContract" : string (contract name),
+  "usingType" : string (type name within the contract)
 }
 ```
