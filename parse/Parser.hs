@@ -45,6 +45,7 @@ solidityImport importReader =
   in do
     reserved "import"
     importName <- soliditySourceFilename
+    semi
     thisFile <- saveFile
     importFile <- newFile importName
     restoreFile thisFile
