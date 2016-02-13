@@ -93,9 +93,10 @@ funcABI (ObjDef name (TupleValue vals) (TupleValue args) _) =
 funcABI _ = Nothing
 
 typeABI :: SolidityTypeLayout -> Identifier -> SolidityNewType -> Maybe Pair
-typeABI (StructLayout fieldsL _) name (Struct fields) =
+typeABI (StructLayout fieldsL tB) name (Struct fields) =
   Just $ pair name $ object [
     pair "type" "Struct",
+    pair "bytes" $ toInteger tB,
     pair "fields" $ varsABI fieldsL fields
     ]
 typeABI (EnumLayout tB) name (Enum names) =
