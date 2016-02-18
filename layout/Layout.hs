@@ -47,16 +47,16 @@ makeTypeLayout contractsL typesL t = case t of
 makeObjsLayout :: SolidityTypesLayout -> [SolidityObjDef] -> SolidityObjsLayout
 makeObjsLayout typesL objs =
   let objsLf = catMaybes $ map (makeObjLayout typesL) objs
-      objEnds = 0:map (objEndBytes . snd) objsL
-      objsL = zipWith ($) objsLf objEnds
+      objOffEnds = 0:map ((+1) . objEndBytes . snd) objsL
+      objsL = zipWith ($) objsLf objOffEnds
   in Map.fromList  objsL
 
 makeObjLayout :: SolidityTypesLayout -> SolidityObjDef
                  -> Maybe (StorageBytes -> (Identifier, SolidityObjLayout))
 makeObjLayout typesL obj = case obj of
   ObjDef{objName = name, objArgType = NoValue, objValueType = SingleValue t} ->
-    Just $ \lastEnd ->
-    let startBytes = nextLayoutStart lastEnd $ usedBytes t
+    Just $ \lastOffEnd ->
+    let startBytes = nextLayoutStart lastOffEnd $ usedBytes t
     in (name,
         ObjLayout {
           objStartBytes = startBytes,
@@ -89,8 +89,9 @@ makeObjLayout typesL obj = case obj of
 
 nextLayoutStart :: StorageBytes -> StorageBytes -> StorageBytes
 nextLayoutStart 0 _ = 0
-nextLayoutStart lastEnd thisSize =
-  let thisStart0 = lastEnd + 1
+nextLayoutStart lastOffEnd thisSize =
+  let thisStart0 = lastOffEnd
+      lastEnd = lastOffEnd - 1
       thisEnd0 = lastEnd + thisSize
       startKey0 = bytesToKey thisStart0
       endKey0 = bytesToKey thisEnd0
