@@ -7,7 +7,6 @@ module Layout (
   StorageBytes
   ) where
 
-import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Data.Maybe
@@ -35,14 +34,14 @@ makeTypeLayout :: SolidityContractsLayout -> SolidityTypesLayout -> SolidityNewT
                    -> SolidityTypeLayout
 makeTypeLayout contractsL typesL t = case t of
   ContractT -> ContractTLayout addressBytes
-  Enum names -> EnumLayout (ceiling $ logBase 8 $ fromIntegral $ length names)
+  Enum names' -> EnumLayout (ceiling $ logBase (8::Double) $ fromIntegral $ length names')
   Using contract name ->
     UsingLayout (typeUsedBytes $ typesLayout (contractsL Map.! contract) Map.! name)
-  Struct fields ->
-    let objsLayout = makeObjsLayout typesL fields
-        lastEnd = objEndBytes $ objsLayout Map.! (objName $ last fields)
+  Struct fields' ->
+    let objsLayout' = makeObjsLayout typesL fields'
+        lastEnd = objEndBytes $ objsLayout' Map.! (objName $ last fields')
         usedBytes = nextLayoutStart lastEnd keyBytes        
-    in StructLayout objsLayout usedBytes
+    in StructLayout objsLayout' usedBytes
 
 makeObjsLayout :: SolidityTypesLayout -> [SolidityObjDef] -> SolidityObjsLayout
 makeObjsLayout typesL objs =

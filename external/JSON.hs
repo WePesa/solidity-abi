@@ -1,4 +1,5 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 module JSON (jsonABI) where
 
 import Data.Aeson hiding (String)
@@ -8,7 +9,6 @@ import qualified Data.Map as Map
 import qualified Data.List as List
 import Data.Maybe
 import Data.String
-import Data.Text (Text)
 
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Vector as Vector
@@ -47,19 +47,19 @@ contractABI fL name (ContractDef objs types _) =
       if Text.null s
       then []
       else [f st]
-    nonempty f Null = []
+    nonempty _ Null = []
     nonempty f x = [f x]
 
 varsABI :: SolidityObjsLayout -> [SolidityObjDef] -> Value
-varsABI layout objs = object $ catMaybes $ map (\o -> varABI layout o) objs
+varsABI layout' objs = object $ catMaybes $ map (\o -> varABI layout' o) objs
 
 funcsABI :: [SolidityObjDef] -> Value
 funcsABI objs = object $ catMaybes $ map funcABI objs
               
 typesABI :: SolidityTypesLayout -> SolidityTypesDef -> Value
-typesABI layout types =
+typesABI layout' types =
   object $ catMaybes $ map snd $ Map.toList $
-  Map.mapWithKey (\k t -> typeABI (layout Map.! k) k t) types
+  Map.mapWithKey (\k t -> typeABI (layout' Map.! k) k t) types
 
 constrABI :: Identifier -> [SolidityObjDef] -> Value
 constrABI name objs = object $ maybe [] listABI argsM
@@ -78,9 +78,9 @@ listABI objs = do
   return $ pair realName $ object $ (pair "index" i) : oABI
 
 varABI :: SolidityObjsLayout -> SolidityObjDef -> Maybe Pair
-varABI layout obj = do
+varABI layout' obj = do
   (name, tABI) <- objABI obj
-  let oB = objStartBytes $ layout Map.! objName obj
+  let oB = objStartBytes $ layout' Map.! objName obj
   return $ pair name $ object $ pair "atBytes" (toInteger oB) : tABI
 
 funcABI :: SolidityObjDef -> Maybe Pair
@@ -93,23 +93,23 @@ funcABI (ObjDef name (TupleValue vals) (TupleValue args) _) =
 funcABI _ = Nothing
 
 typeABI :: SolidityTypeLayout -> Identifier -> SolidityNewType -> Maybe Pair
-typeABI (StructLayout fieldsL tB) name (Struct fields) =
+typeABI (StructLayout fieldsL tB) name (Struct fields') =
   Just $ pair name $ object [
     pair "type" "Struct",
     pair "bytes" $ toInteger tB,
-    pair "fields" $ varsABI fieldsL fields
+    pair "fields" $ varsABI fieldsL fields'
     ]
-typeABI (EnumLayout tB) name (Enum names) =
+typeABI (EnumLayout tB) name (Enum names') =
   Just $ pair name $ object $ [
     pair "type" "Enum",
     pair "bytes" $ toInteger tB,
-    pair "names" names
+    pair "names" names'
     ]
-typeABI (UsingLayout tB) name (Using contract typeName) =
+typeABI (UsingLayout _) name (Using contract typeName') =
   Just $ pair name $ object $ [
     pair "type" "Using",
     pair "usingContract" contract,
-    pair "usingType" typeName
+    pair "usingType" typeName'
     ]
 typeABI _ _ _ = Nothing
 

@@ -1,10 +1,10 @@
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Expression where
 
 import Text.Parsec
 import Text.Parsec.Expr
 
 import Data.Functor.Identity
-import Numeric.Natural
 
 import Lexer
 import ParserTypes

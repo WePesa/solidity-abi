@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module Parser (
   parse,
   Identifier, ContractName, SourceCode,
@@ -6,9 +7,6 @@ module Parser (
   SolidityTypeDef(..), SolidityTuple(..),
   SolidityBasicType(..), SolidityNewType(..)
   ) where
-
-import qualified Data.Set as Set
-import Data.Map (Map)
 
 import Text.Parsec hiding (parse)
 import Text.Parsec.Pos
@@ -19,8 +17,8 @@ import ParserTypes
 
 parse :: (SourceName -> String) -> SourceName -> String
           -> Either ParseError SolidityFile
-parse importReader sourceName sourceCode =
-  runParser (solidityFile importReader) "" sourceName sourceCode
+parse importReader sName sCode =
+  runParser (solidityFile importReader) "" sName sCode
 
 solidityFile :: (SourceName -> String) -> SolidityParser SolidityFile
 solidityFile importReader = do

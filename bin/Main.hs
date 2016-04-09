@@ -8,10 +8,10 @@ import Data.List
 import Data.Maybe
 
 import qualified Data.Map as Map
-import Data.Map (Map)
 
 import System.Environment
 
+main :: IO ()
 main = do
   sourceFiles <- getArgs
   let (mainFile, imports) =

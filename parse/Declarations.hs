@@ -1,12 +1,11 @@
+{-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module Declarations (solidityContract) where
 
 import Data.Either
-import Data.Functor
 import Data.List
 import Data.Maybe
 
 import Text.Parsec
-import Text.Parsec.Char
 import Text.Parsec.Perm
 
 import Lexer
@@ -16,20 +15,20 @@ import Types
 solidityContract :: SolidityParser SolidityContract
 solidityContract = do
   reserved "contract" <|> reserved "library"
-  contractName <- identifier
-  setContractName contractName
+  contractName' <- identifier
+  setContractName contractName'
   baseConstrs <- option [] $ do
     reserved "is"
     commaSep1 $ do
       name <- identifier
       consArgs <- option "" parensCode
       return (name, consArgs)
-  (contractTypes, contractObjs) <-
+  (contractTypes', contractObjs') <-
     partitionEithers <$> (braces $ many solidityDeclaration)
   return $ Contract {
-    contractName = contractName,
-    contractObjs = filter (tupleHasValue . objValueType) contractObjs,
-    contractTypes = contractTypes,
+    contractName = contractName',
+    contractObjs = filter (tupleHasValue . objValueType) contractObjs',
+    contractTypes = contractTypes',
     contractBaseNames = baseConstrs
     }
 
@@ -71,15 +70,15 @@ enumDeclaration = do
 usingDeclaration :: SolidityParser SolidityTypeDef
 usingDeclaration = do
   reserved "using"
-  usingContract <- identifier
+  usingContract' <- identifier
   reserved "for"
-  string usingContract
+  string usingContract'
   dot
   usingName <- identifier
   semi
   return $ TypeDef {
-    typeName = usingContract ++ "." ++ usingName,
-    typeDecl = Using { usingContract = usingContract, usingType = usingName }
+    typeName = usingContract' ++ "." ++ usingName,
+    typeDecl = Using { usingContract = usingContract', usingType = usingName }
     }
 
 {- Variables -}
@@ -104,13 +103,13 @@ simpleVariableDeclaration = do
                      (reserved "private" >> return False) <|>
                      (reserved "internal" >> return False)
   variableName <- identifier
-  let objValueType =
+  let objValueType' =
         if variableVisible
         then SingleValue variableType
         else NoValue
   return $ ObjDef {
     objName = variableName,
-    objValueType = objValueType,
+    objValueType = objValueType',
     objArgType = NoValue,
     objDefn = ""
     }
@@ -124,14 +123,14 @@ functionDeclaration = do
   functionArgs <- tupleDeclaration
   (functionRet, functionVisible, _, _) <- functionModifiers
   functionBody <- bracedCode <|> (semi >> return "")
-  contractName <- getContractName
-  let objValueType = case () of
+  contractName' <- getContractName
+  let objValueType' = case () of
         _ | null functionName || not functionVisible -> NoValue
-        _ | functionName == contractName -> SingleValue $ Typedef contractName
+        _ | functionName == contractName' -> SingleValue $ Typedef contractName'
         _ | otherwise -> functionRet
   return $ ObjDef {
     objName = functionName,
-    objValueType = objValueType,
+    objValueType = objValueType',
     objArgType = functionArgs,
     objDefn = functionBody
     }

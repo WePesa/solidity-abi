@@ -1,10 +1,10 @@
 {-# LANGUAGE FlexibleInstances #-}
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Selector (selector) where
 
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
 
-import Data.List
 import Data.Maybe
 import qualified Data.Text as T
 import Data.Text.Encoding

@@ -1,10 +1,9 @@
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Lexer where
 
 import Text.Parsec
 import Text.Parsec.Language (javaStyle)
 import qualified Text.Parsec.Token as P
-
-import Numeric.Natural
 
 import ParserTypes
 

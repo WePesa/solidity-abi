@@ -38,8 +38,8 @@ makeContractsDef contracts = Map.map finalize $ c3Linearized contractDefs
       (name, ContractDef objs (makeTypesDef types) (map getContractDef bases))
     getContractDef (name, _) = (name, contractDefs Map.! name)
     finalize (ContractDef objsD typesD bases) = 
-      ContractDef objsD (typesD `Map.union` contractTypes) bases
-    contractTypes = makeTypesDef $ do
+      ContractDef objsD (typesD `Map.union` contractTypes') bases
+    contractTypes' = makeTypesDef $ do
       Contract{contractName = name} <- contracts
       return $ TypeDef name ContractT
 
@@ -72,7 +72,7 @@ c3Merge contracts = c3Head <> c3Merge c3Tail
     c3Index = fromMaybe (error "Contract inheritance cannot be linearized") $
               List.findIndex isC3Head contracts
     isC3Head (name, _) =
-      all (\names -> not $ name `elem` names) $
+      all (\names' -> not $ name `elem` names') $
       map (map fst . tail' . inherits . snd) contracts
     
     tail' [] = []
