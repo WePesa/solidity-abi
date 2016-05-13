@@ -11,6 +11,8 @@ module Parser (
 import Text.Parsec hiding (parse)
 import Text.Parsec.Pos
 
+import System.FilePath
+
 import Declarations
 import Lexer
 import ParserTypes
@@ -45,7 +47,7 @@ solidityImport importReader =
     importName <- soliditySourceFilename
     semi
     thisFile <- saveFile
-    importFile <- newFile importName
+    importFile <- newFile $ takeBaseName importName
     restoreFile thisFile
     return importFile
   

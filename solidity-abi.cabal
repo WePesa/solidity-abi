@@ -44,6 +44,7 @@ library
                        containers,
                        parsec,
                        bytestring,
+                       filepath,
                        text,
                        pretty,
                        aeson,
