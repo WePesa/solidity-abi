@@ -20,6 +20,7 @@ executable solidity-abi
   build-depends:       base,
                        bytestring,
                        containers,
+                       filepath,
                        aeson-pretty,
                        solidity-abi
   hs-source-dirs:      bin

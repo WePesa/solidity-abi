@@ -10,6 +10,7 @@ import Data.Maybe
 import qualified Data.Map as Map
 
 import System.Environment
+import System.FilePath
 
 main :: IO ()
 main = do
@@ -23,7 +24,7 @@ main = do
       return (s, Map.empty)
     else do
       sources <- sequence $ map readFile sourceFiles
-      return (head sources, Map.fromList $ zip imports $ tail sources)
+      return (head sources, Map.fromList $ zip (map takeBaseName imports) $ tail sources)
   let doImport i = Map.findWithDefault (error "Import not found") i sourceMap
       parsed = parse doImport mainFile mainSrc
   either print (BS.putStr . Aeson.encodePretty) $ jsonABI <$> parsed
