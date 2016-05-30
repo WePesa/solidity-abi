@@ -6,6 +6,7 @@ import Data.Aeson hiding (String)
 import qualified Data.Aeson as Aeson (Value(String))
 import Data.Aeson.Types (Pair)
 import qualified Data.Map as Map
+import Data.Map (Map)
 import qualified Data.List as List
 import Data.Maybe
 import Data.String
@@ -15,15 +16,23 @@ import qualified Data.Vector as Vector
 import qualified Data.Text as Text
 
 import Layout
+import DefnTypes
 import LayoutTypes
 import ParserTypes
 import Selector
 
 instance ToJSON SolidityFile where
-  toJSON = jsonABI
+  toJSON f = jsonABI "" (Map.singleton "" f)
 
-jsonABI :: SolidityFile -> Value
-jsonABI f = toJSON $ Map.mapWithKey (contractABI $ layout f) $ makeContractsDef f
+jsonABI :: FileName -> Map FileName SolidityFile -> Value
+jsonABI fileName files = toJSON $ fileContractsABI `Map.union` importContractsABI
+  where fileContractsABI = allContractsABI Map.! fileName
+        importContractsABI = getImportDefs allContractsABI $ fileImports mainFile
+        mainFile = files Map.! fileName
+        allContractsABI = Map.map doFileContractsABI filesDefs
+        doFileContractsABI fileDefs = Map.mapWithKey (contractABI fileLayout) fileDefs
+          where fileLayout = makeContractsLayout fileDefs
+        filesDefs = makeFilesDef files
 
 contractABI :: SolidityFileLayout -> ContractName -> SolidityContractDef -> Value
 contractABI fL name (ContractDef objs types _) =

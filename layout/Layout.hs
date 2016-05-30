@@ -1,5 +1,5 @@
 module Layout (
-  layout,
+  makeContractsLayout,
   SolidityFileLayout, SolidityContractsLayout,
   SolidityTypesLayout, SolidityObjsLayout,
   SolidityContractLayout(..), SolidityTypeLayout(..),
@@ -11,11 +11,9 @@ import qualified Data.Map as Map
 
 import Data.Maybe
 
+import DefnTypes
 import ParserTypes
 import LayoutTypes
-
-layout :: SolidityFile -> SolidityFileLayout
-layout = makeContractsLayout . makeContractsDef
 
 makeContractsLayout :: SolidityContractsDef -> SolidityContractsLayout
 makeContractsLayout contracts = contractsL

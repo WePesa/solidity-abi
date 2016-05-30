@@ -1,3 +1,3 @@
-module Blockchain.Ethereum.Solidity.Parse (parse) where
+module Blockchain.Ethereum.Solidity.Parse (parseSolidity) where
 
 import Parser

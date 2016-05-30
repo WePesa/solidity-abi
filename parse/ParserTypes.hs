@@ -1,8 +1,11 @@
 module ParserTypes where
 
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Text.Parsec
 import Numeric.Natural
 
+type FileName = SourceName
 type Identifier = String
 type ContractName = Identifier
 type SourceCode = String
@@ -14,7 +17,35 @@ setContractName = setState
 getContractName :: SolidityParser ContractName
 getContractName = getState
 
-type SolidityFile = [SolidityContract]
+data ImportAs =
+    Unqualified |
+    StarPrefix ContractName |
+    Aliases [(ContractName, ContractName)]
+    
+getImportDefs :: Map FileName (Map ContractName a) -> [(FileName, ImportAs)]
+                  -> Map ContractName a
+getImportDefs fileDefs imports = Map.unions $ map getQualifiedImports imports
+  where
+    getQualifiedImports (fileName, importAs) =
+      changeNames importAs $
+      Map.findWithDefault (error $ "Import not found: " ++ fileName) fileName fileDefs
+      where
+        changeNames Unqualified = id
+        changeNames (StarPrefix p) = Map.mapKeys ((p ++ ".") ++)
+        changeNames (Aliases as) = Map.fromList . flip map as . getSym
+          where
+            getSym m (k, a) =
+              (a,
+               Map.findWithDefault
+                 (error $ "Symbol " ++ k ++ " not found in " ++ fileName)
+                 k m
+              )
+
+data SolidityFile = 
+  SolidityFile {  
+    fileContracts :: [SolidityContract],
+    fileImports :: [(FileName, ImportAs)]
+  }
 
 data SolidityContract =
   Contract {

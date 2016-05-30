@@ -36,8 +36,10 @@ library
                        LayoutTypes
                        Declarations
                        Expression
+                       File
                        Lexer
                        Parser
+                       DefnTypes
                        ParserTypes
                        Types
   build-depends:       base,
