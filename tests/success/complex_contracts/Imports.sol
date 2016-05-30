@@ -1,3 +1,3 @@
 import * as Imported from "ContractInheritance.sol";
 
-contract NotImported {}
+contract NotImported is Imported.owned {}

@@ -20,7 +20,7 @@ solidityContract = do
   baseConstrs <- option [] $ do
     reserved "is"
     commaSep1 $ do
-      name <- identifier
+      name <- intercalate "." <$> sepBy1 identifier dot
       consArgs <- option "" parensCode
       return (name, consArgs)
   (contractTypes', contractObjs') <-

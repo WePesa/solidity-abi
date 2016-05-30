@@ -33,12 +33,12 @@ makeFilesDef files = result
 
 makeContractsDef :: Map FileName SolidityContractsDef -> SolidityFile -> SolidityContractsDef
 makeContractsDef fileDefs (SolidityFile contracts imports) =
-  Map.map finalize $ c3Linearized contractDefs
+  Map.map finalize $ c3Linearized contractDefs importDefs
   where
     contractDefs = Map.fromList $ map contractToDef contracts
     contractToDef (Contract name objs types bases) =
       (name, ContractDef objs (makeTypesDef types) (map getContractDef bases))
-    getContractDef (name, _) = (name, allDefs Map.! name)
+    getContractDef (name, _) = (name, Map.findWithDefault (error $ "Couldn't find base contract named " ++ name) name allDefs)
     allDefs = importDefs `Map.union` contractDefs
     importDefs = getImportDefs fileDefs imports
     finalize (ContractDef objsD typesD bases) = 
@@ -50,14 +50,14 @@ makeTypesDef :: [SolidityTypeDef] -> SolidityTypesDef
 makeTypesDef types = Map.fromList $ map typeToTuple types
   where typeToTuple (TypeDef name decl) = (name, decl)
 
-c3Linearized :: SolidityContractsDef -> SolidityContractsDef
-c3Linearized contracts = result
-  where result = Map.map (c3Linearize result) contracts
+c3Linearized :: SolidityContractsDef -> SolidityContractsDef -> SolidityContractsDef
+c3Linearized contracts imports = result
+  where result = Map.map (c3Linearize $ imports `Map.union` result) contracts
 
 c3Linearize :: SolidityContractsDef -> SolidityContractDef -> SolidityContractDef
 c3Linearize c3Contracts contract =
   contract{inherits = []} <> c3Merge (map c3Lookup $ inherits contract)
-  where c3Lookup (name, _) = (name, c3Contracts Map.! name)
+  where c3Lookup (name, _) = (name, Map.findWithDefault (error $ "Couldn't find base contract named " ++ name ++ " while linearizing") name c3Contracts)
 
 c3Merge :: [(ContractName, SolidityContractDef)] -> SolidityContractDef
 c3Merge [] = mempty
