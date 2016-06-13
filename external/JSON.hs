@@ -129,6 +129,17 @@ basicTypeABI (UnsignedInt b) = [
   pair "type" "Int",
   pair "bytes" $ toInteger b
   ]
+basicTypeABI (SignedFixed ib fb) = [
+  pair "type" "Fixed",
+  pair "signed" True,
+  pair "intBytes" $ toInteger ib,
+  pair "fracBytes" $ toInteger fb
+  ]
+basicTypeABI (UnsignedFixed ib fb) = [
+  pair "type" "Fixed",
+  pair "intBytes" $ toInteger ib,
+  pair "fracBytes" $ toInteger fb
+  ]
 basicTypeABI (FixedBytes b) = [
   pair "type" "Bytes",
   pair "bytes" $ toInteger b

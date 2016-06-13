@@ -76,6 +76,15 @@ basic type ABI = {
   // uintN
   "type" : "Int",
   "bytes" : decimal number (= N/8; byte length)
+  // fixedIxF
+  "type" : "Fixed",
+  "signed": "true",
+  "intBytes": decimal number (= I/8; integer part byte length)
+  "fracBytes": decimal number (= F/8; fractional part byte length)
+  // fixedIxF
+  "type" : "Fixed",
+  "intBytes": decimal number (= I/8; integer part byte length)
+  "fracBytes": decimal number (= F/8; fractional part byte length)
   // bytesN
   "type" : "Bytes",
   "bytes" : decimal number (= N; byte length)

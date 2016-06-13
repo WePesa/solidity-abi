@@ -68,6 +68,8 @@ makeObjLayout typesL obj = case obj of
       Address -> addressBytes
       SignedInt b -> b
       UnsignedInt b -> b
+      SignedFixed ib fb -> ib + fb
+      UnsignedFixed ib fb -> ib + fb
       FixedBytes b -> b
       DynamicBytes -> keyBytes
       String -> keyBytes

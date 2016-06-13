@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module Types where
 
+import Control.Monad
 import Data.Maybe
 import Text.Parsec
 
@@ -19,6 +20,8 @@ simpleType =
   bytes' <|>
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
+  fixedSuffixed "ufixed" UnsignedFixed <|>
+  fixedSuffixed "fixed" UnsignedFixed <|>
   (fmap Typedef $ choice [
     identifier,
     concat <$> sequence [identifier, dot, identifier]
@@ -41,6 +44,19 @@ simpleType =
       sizeM <- optionMaybe $ choice $ map (try . string) sizesS
       let size = read $ fromMaybe (head sizesS) sizeM
       return $ baseType (size `quot` 8) -- in bytes
+    fixedSuffixed base baseType = lexeme $ try $ do
+      string base
+      let sizesS = reverse $ map show [0::Int, 8 .. 256]
+      sizesM <- optionMaybe $ do
+        let sizeParser = choice $ map (try . string) sizesS
+        intSize <- sizeParser 
+        string "x"
+        fracSize <- sizeParser
+        let (iS, fS) = (read intSize, read fracSize)
+        guard $ iS + fS <= 256
+        return (iS, fS)
+      let (intSize, fracSize) = fromMaybe (128,128) sizesM
+      return $ baseType (intSize `quot` 8) (fracSize `quot` 8) -- in bytes
 
 arrayType :: SolidityParser SolidityBasicType
 arrayType = do

@@ -56,6 +56,8 @@ data SolidityBasicType =
   Address |
   SignedInt   { bytes :: Natural } |
   UnsignedInt { bytes :: Natural } |
+  SignedFixed { intBytes :: Natural, fracBytes :: Natural } |
+  UnsignedFixed { intBytes :: Natural, fracBytes :: Natural } |
   FixedBytes  { bytes :: Natural } |
   DynamicBytes|
   String |
