@@ -49,7 +49,9 @@ contract = {
      "type name" : type defn,
      ...
    },
-   "constr" : function args
+   "constr" : function args,
+   // For libraries only
+   "library" : true
 }
 ```
 where any of the fields, if empty, is omitted.
@@ -100,6 +102,7 @@ basic type ABI = {
   "value" : basic type ABI of valT
   // name
   "typedef" : name (identifier of user-defined type)
+  "library" : name (name of library containing the type; absent if not from a library)
 }
 ```
 
