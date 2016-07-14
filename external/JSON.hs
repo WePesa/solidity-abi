@@ -22,17 +22,28 @@ import ParserTypes
 import Selector
 
 instance ToJSON SolidityFile where
-  toJSON f = jsonABI "" (Map.singleton "" f)
+  toJSON f = either id id $ jsonABI "" (Map.singleton "" f)
 
-jsonABI :: FileName -> Map FileName SolidityFile -> Value
-jsonABI fileName files = toJSON $ fileContractsABI `Map.union` importContractsABI
-  where fileContractsABI = allContractsABI Map.! fileName
-        importContractsABI = getImportDefs allContractsABI $ fileImports mainFile
-        mainFile = files Map.! fileName
-        allContractsABI = Map.map doFileContractsABI filesDefs
-        doFileContractsABI fileDefs = Map.mapWithKey (contractABI fileLayout) fileDefs
+jsonABI :: FileName -> Map FileName SolidityFile -> Either Value Value
+jsonABI fileName files = convertImportError $ do
+  filesDefs <- makeFilesDef files
+  let doFileContractsABI fileDefs = Map.mapWithKey (contractABI fileLayout) fileDefs
           where fileLayout = makeContractsLayout fileDefs
-        filesDefs = makeFilesDef files
+      allContractsABI = Map.map doFileContractsABI filesDefs
+      mainFile = files Map.! fileName
+  importContractsABI <- getImportDefs (Map.map Right allContractsABI) $ fileImports mainFile
+  let fileContractsABI = allContractsABI Map.! fileName
+  return $ toJSON $ fileContractsABI `Map.union` importContractsABI
+
+  where
+    convertImportError xEither = case xEither of
+      Left (MissingImport fileName) -> Left $
+        object [pair "missingImport" fileName]
+      Left (MissingSymbol symName fileName) -> Left $
+        object [pair "missingSymbol" symName, pair "fileName" fileName]
+      Left (MissingBase baseName) -> Left $
+        object [pair "missingBase" baseName]
+      Right x -> Right x
 
 contractABI :: SolidityFileLayout -> ContractName -> SolidityContractDef -> Value
 contractABI fL name (ContractDef objs types _) =

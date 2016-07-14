@@ -6,8 +6,11 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.Monoid
 import Data.Maybe
+import Data.Traversable
 
 import ParserTypes
+
+import Debug.Trace
 
 type IdentT a = Map Identifier a
 
@@ -27,24 +30,25 @@ instance Monoid SolidityContractDef where
     ContractDef (List.unionBy ((==) `on` objName) o2 o1) (t1 `Map.union` t2) (i1 ++ i2)
   mempty = ContractDef [] Map.empty []
 
-makeFilesDef :: Map FileName SolidityFile -> Map FileName SolidityContractsDef
-makeFilesDef files = result
+makeFilesDef :: Map FileName SolidityFile -> Either ImportError (Map FileName SolidityContractsDef)
+makeFilesDef files = sequence result
   where result = Map.map (makeContractsDef result) files
 
-makeContractsDef :: Map FileName SolidityContractsDef -> SolidityFile -> SolidityContractsDef
-makeContractsDef fileDefs (SolidityFile contracts imports) =
-  Map.map finalize $ c3Linearized contractDefs importDefs
-  where
-    contractDefs = Map.fromList $ map contractToDef contracts
+makeContractsDef :: Map FileName (Either ImportError SolidityContractsDef) -> SolidityFile -> Either ImportError SolidityContractsDef
+makeContractsDef fileDefEs (SolidityFile contracts imports) = do
+  importDefs <- getImportDefs fileDefEs imports
+  let
+    getContractDef (name, _) = (name, Map.findWithDefault (error $ "Couldn't find base contract named " ++ name) name allDefs)
     contractToDef (Contract name objs types bases) =
       (name, ContractDef objs (makeTypesDef types) (map getContractDef bases))
-    getContractDef (name, _) = (name, Map.findWithDefault (error $ "Couldn't find base contract named " ++ name) name allDefs)
+    contractDefs = Map.fromList $ map contractToDef contracts
     allDefs = importDefs `Map.union` contractDefs
-    importDefs = getImportDefs fileDefs imports
-    finalize (ContractDef objsD typesD bases) = 
-      ContractDef objsD (typesD `Map.union` contractTypes') bases
+
     contractTypes' =
       makeTypesDef $ map (\(name, _) -> TypeDef name ContractT) $ Map.toList allDefs
+    finalize (ContractDef objsD typesD bases) = 
+      ContractDef objsD (typesD `Map.union` contractTypes') bases
+  return $ Map.map finalize $ c3Linearized contractDefs importDefs
 
 makeTypesDef :: [SolidityTypeDef] -> SolidityTypesDef
 makeTypesDef types = Map.fromList $ map typeToTuple types
