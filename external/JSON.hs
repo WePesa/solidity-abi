@@ -21,29 +21,40 @@ import LayoutTypes
 import ParserTypes
 import Selector
 
+import Debug.Trace
+
 instance ToJSON SolidityFile where
   toJSON f = either id id $ jsonABI "" (Map.singleton "" f)
 
 jsonABI :: FileName -> Map FileName SolidityFile -> Either Value Value
 jsonABI fileName files = convertImportError $ do
-  filesDefs <- makeFilesDef files
-  let doFileContractsABI fileDefs = Map.mapWithKey (contractABI fileLayout) fileDefs
-          where fileLayout = makeContractsLayout fileDefs
-      allContractsABI = Map.map doFileContractsABI filesDefs
-      mainFile = files Map.! fileName
-  importContractsABI <- getImportDefs (Map.map Right allContractsABI) $ fileImports mainFile
-  let fileContractsABI = allContractsABI Map.! fileName
-  return $ toJSON $ fileContractsABI `Map.union` importContractsABI
+  filesDef <- makeFilesDef files
+  let
+    results = Map.mapWithKey (doFileABI files) filesDef
+    doFileABI files fName fileDef =
+      filesABI results (fileImports $ files Map.! fName) fileDef
+  result <- results Map.! fileName
+  return $ toJSON result
 
   where
     convertImportError xEither = case xEither of
-      Left (MissingImport fileName) -> Left $
-        object [pair "missingImport" fileName]
-      Left (MissingSymbol symName fileName) -> Left $
-        object [pair "missingSymbol" symName, pair "fileName" fileName]
+      Left (MissingImport fName) -> Left $
+        object [pair "missingImport" fName]
+      Left (MissingSymbol symName fName) -> Left $
+        object [pair "missingSymbol" symName, pair "fileName" fName]
       Left (MissingBase baseName) -> Left $
         object [pair "missingBase" baseName]
       Right x -> Right x
+
+filesABI :: Map FileName (Either ImportError (Map ContractName Value))
+            -> [(FileName, ImportAs)] -> SolidityContractsDef
+            -> Either ImportError (Map ContractName Value)
+filesABI fileABIEs imports fileDef = do
+  importsABI <- getImportDefs fileABIEs imports
+  let
+    fileLayout = makeContractsLayout fileDef
+    fileABI = Map.mapWithKey (contractABI fileLayout) fileDef
+  return $ fileABI `Map.union` importsABI
 
 contractABI :: SolidityFileLayout -> ContractName -> SolidityContractDef -> Value
 contractABI fL name (ContractDef objs types _) =

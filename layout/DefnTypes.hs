@@ -31,10 +31,11 @@ instance Monoid SolidityContractDef where
   mempty = ContractDef [] Map.empty []
 
 makeFilesDef :: Map FileName SolidityFile -> Either ImportError (Map FileName SolidityContractsDef)
-makeFilesDef files = sequence result
-  where result = Map.map (makeContractsDef result) files
+makeFilesDef files = sequence $ Map.map (fst <$>) resultPairs
+  where resultPairs = Map.map (makeContractsDef resultTrans) files
+        resultTrans = Map.map (snd <$>) resultPairs
 
-makeContractsDef :: Map FileName (Either ImportError SolidityContractsDef) -> SolidityFile -> Either ImportError SolidityContractsDef
+makeContractsDef :: Map FileName (Either ImportError SolidityContractsDef) -> SolidityFile -> Either ImportError (SolidityContractsDef, SolidityContractsDef)
 makeContractsDef fileDefEs (SolidityFile contracts imports) = do
   importDefs <- getImportDefs fileDefEs imports
   let
@@ -48,7 +49,9 @@ makeContractsDef fileDefEs (SolidityFile contracts imports) = do
       makeTypesDef $ map (\(name, _) -> TypeDef name ContractT) $ Map.toList allDefs
     finalize (ContractDef objsD typesD bases) = 
       ContractDef objsD (typesD `Map.union` contractTypes') bases
-  return $ Map.map finalize $ c3Linearized contractDefs importDefs
+  
+    result = Map.map finalize $ c3Linearized contractDefs importDefs
+  return $ (result, result `Map.union` importDefs)
 
 makeTypesDef :: [SolidityTypeDef] -> SolidityTypesDef
 makeTypesDef types = Map.fromList $ map typeToTuple types
