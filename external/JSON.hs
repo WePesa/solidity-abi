@@ -15,13 +15,12 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Vector as Vector
 import qualified Data.Text as Text
 
+import Imports
 import Layout
 import DefnTypes
 import LayoutTypes
 import ParserTypes
 import Selector
-
-import Debug.Trace
 
 instance ToJSON SolidityFile where
   toJSON f = either id id $ jsonABI "" (Map.singleton "" f)
@@ -38,6 +37,8 @@ jsonABI fileName files = convertImportError $ do
 
   where
     convertImportError xEither = case xEither of
+      Left (ImportCycle fBase fName) -> Left $
+        object [pair "importCycle" fName, pair "inFile" fBase]
       Left (MissingImport fBase fName) -> Left $
         object [pair "missingImport" fName, pair "inFile" fBase]
       Left (MissingSymbol fBase symName fName) -> Left $

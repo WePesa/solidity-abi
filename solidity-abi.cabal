@@ -42,12 +42,13 @@ library
                        DefnTypes
                        ParserTypes
                        Types
+                       Imports
   build-depends:       base,
                        containers,
                        parsec,
                        bytestring,
                        text,
-                       system-filepath,
+                       filepath,
                        pretty,
                        aeson,
                        cryptohash,

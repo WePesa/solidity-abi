@@ -8,9 +8,8 @@ import Data.Monoid
 import Data.Maybe
 import Data.Traversable
 
+import Imports
 import ParserTypes
-
-import Debug.Trace
 
 type IdentT a = Map Identifier a
 
