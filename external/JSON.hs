@@ -32,25 +32,26 @@ jsonABI fileName files = convertImportError $ do
   let
     results = Map.mapWithKey (doFileABI files) filesDef
     doFileABI files fName fileDef =
-      filesABI results (fileImports $ files Map.! fName) fileDef
+      filesABI fName results (fileImports $ files Map.! fName) fileDef
   result <- results Map.! fileName
   return $ toJSON result
 
   where
     convertImportError xEither = case xEither of
-      Left (MissingImport fName) -> Left $
-        object [pair "missingImport" fName]
-      Left (MissingSymbol symName fName) -> Left $
-        object [pair "missingSymbol" symName, pair "fileName" fName]
-      Left (MissingBase baseName) -> Left $
-        object [pair "missingBase" baseName]
+      Left (MissingImport fBase fName) -> Left $
+        object [pair "missingImport" fName, pair "inFile" fBase]
+      Left (MissingSymbol fBase symName fName) -> Left $
+        object [pair "missingSymbol" symName, pair "fileName" fName, pair "inFile" fBase]
+      Left (MissingBase fBase baseName) -> Left $
+        object [pair "missingBase" baseName, pair "inFile" fBase]
       Right x -> Right x
 
-filesABI :: Map FileName (Either ImportError (Map ContractName Value))
-            -> [(FileName, ImportAs)] -> SolidityContractsDef
-            -> Either ImportError (Map ContractName Value)
-filesABI fileABIEs imports fileDef = do
-  importsABI <- getImportDefs fileABIEs imports
+filesABI :: FileName ->
+            Map FileName (Either ImportError (Map ContractName Value)) ->
+            [(FileName, ImportAs)] -> SolidityContractsDef ->
+            Either ImportError (Map ContractName Value)
+filesABI fileName fileABIEs imports fileDef = do
+  importsABI <- getImportDefs fileName fileABIEs imports
   let
     fileLayout = makeContractsLayout fileDef
     fileABI = Map.mapWithKey (contractABI fileLayout) fileDef

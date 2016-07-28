@@ -47,6 +47,7 @@ library
                        parsec,
                        bytestring,
                        text,
+                       system-filepath,
                        pretty,
                        aeson,
                        cryptohash,

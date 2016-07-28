@@ -32,12 +32,15 @@ instance Monoid SolidityContractDef where
 
 makeFilesDef :: Map FileName SolidityFile -> Either ImportError (Map FileName SolidityContractsDef)
 makeFilesDef files = sequence $ Map.map (fst <$>) resultPairs
-  where resultPairs = Map.map (makeContractsDef resultTrans) files
+  where resultPairs = Map.mapWithKey (makeContractsDef resultTrans) files
         resultTrans = Map.map (snd <$>) resultPairs
 
-makeContractsDef :: Map FileName (Either ImportError SolidityContractsDef) -> SolidityFile -> Either ImportError (SolidityContractsDef, SolidityContractsDef)
-makeContractsDef fileDefEs (SolidityFile contracts imports) = do
-  importDefs <- getImportDefs fileDefEs imports
+makeContractsDef :: Map FileName (Either ImportError SolidityContractsDef) ->
+                    FileName ->
+                    SolidityFile -> 
+                    Either ImportError (SolidityContractsDef, SolidityContractsDef)
+makeContractsDef fileDefEs fileName (SolidityFile contracts imports) = do
+  importDefs <- getImportDefs fileName fileDefEs imports
   let
     getContractDef (name, _) = (name, Map.findWithDefault (error $ "Couldn't find base contract named " ++ name) name allDefs)
     contractToDef (Contract name objs types bases) =

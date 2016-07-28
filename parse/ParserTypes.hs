@@ -1,10 +1,12 @@
 module ParserTypes where
 
 import Data.Map (Map)
+import Data.String
 import Data.Traversable
 import qualified Data.Map as Map
 import Text.Parsec
 import Numeric.Natural
+import Filesystem.Path.CurrentOS
 
 type FileName = SourceName
 type Identifier = String
@@ -24,19 +26,35 @@ data ImportAs =
     Aliases [(ContractName, ContractName)]
    
 data ImportError = 
-  MissingImport FileName |
-  MissingSymbol Identifier FileName |
-  MissingBase Identifier
+  MissingImport {
+    importErrMainFile :: FileName,
+    importErrRelImport :: FileName
+    } |
+  MissingSymbol {
+    importErrMainFile :: FileName,
+    importErrSymbol :: Identifier,
+    importErrRelImport :: FileName
+    } |
+  MissingBase {
+    importErrMainFile :: FileName,
+    importErrBase :: Identifier
+    }
 
-getImportDefs :: Map FileName (Either ImportError (Map ContractName a))
-                  -> [(FileName, ImportAs)]
-                  -> Either ImportError (Map ContractName a)
-getImportDefs fileDefsEither imports = do
+getImportDefs :: FileName ->
+                 Map FileName (Either ImportError (Map ContractName a)) ->
+                 [(FileName, ImportAs)] ->
+                 Either ImportError (Map ContractName a)
+getImportDefs mainFileName fileDefsEither imports = do
   let 
     getQualifiedImports (fileName, importAs) = do
       let
-        getFileEither = Map.findWithDefault (Left $ MissingImport fileName) fileName
-        getSymbolEither sym = Map.findWithDefault (Left $ MissingSymbol sym fileName) sym
+        mainPath = fromString mainFileName
+        filePath = fromString fileName
+        relImport = encodeString $ collapse $ directory mainPath </> filePath
+        getFileEither =
+          Map.findWithDefault (Left $ MissingImport mainFileName relImport) relImport
+        getSymbolEither sym =
+          Map.findWithDefault (Left $ MissingSymbol mainFileName sym relImport) sym
         changeNames = case importAs of
           Unqualified -> sequence
           StarPrefix p -> sequence . Map.mapKeys ((p ++ ".") ++)
