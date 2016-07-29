@@ -41,31 +41,28 @@ getImportDefs mainFileName fileDefsEither imports = do
       changeNames symbolDefsEither
 
       where
-        getFileEither m =
-          handleCycle relImport $
-          Map.findWithDefault (Just $ Left $ MissingImport mainFileName relImport) relImport $
-          blankFile m
+        getFileEither =
+          Map.findWithDefault (Left $ MissingImport mainFileName relImport) relImport
         changeNames = case importAs of
           Unqualified -> sequence
           StarPrefix p -> sequence . Map.mapKeys ((p ++ ".") ++)
           Aliases as -> sequence . Map.fromList . flip map as . getSym
             where getSym m (k, x) = (x, getSymbolEither k m)
-        getSymbolEither sym m =
-          handleCycle relImport $
-          Map.findWithDefault (Just $ Left $ MissingSymbol mainFileName sym relImport) sym $
-          blankFile m
+        getSymbolEither sym =
+          Map.findWithDefault (Left $ MissingSymbol mainFileName sym relImport) sym
         relImport = collapse $ prependIfRelative fileName
 
-    collapse path = joinPath $ collapse' $ splitDirectories path
-      where collapse' [] = []
-            collapse' (x : ".." : rest) = collapse' rest
-            collapse' ("." : x : rest) = collapse' $ x : rest
-            collapse' (x : rest) = x : collapse' rest
     prependIfRelative fn =
       case splitDirectories fn of
         "." : _ -> mainFilePath </> fn
         ".." : _ -> mainFilePath </> fn
         _ -> fn
       where mainFilePath = takeDirectory mainFileName
-    blankFile = Map.adjust (const Nothing) mainFileName . Map.map Just
-    handleCycle f = maybe (Left $ ImportCycle mainFileName f) id
+
+collapse :: FilePath -> FilePath
+collapse path = joinPath $ collapse' $ splitDirectories path
+  where collapse' [] = []
+        collapse' (x : ".." : rest) = collapse' rest
+        collapse' ("." : x : rest) = collapse' $ x : rest
+        collapse' (x : rest) = x : collapse' rest
+

@@ -31,7 +31,7 @@ instance Monoid SolidityContractDef where
 
 makeFilesDef :: Map FileName SolidityFile -> Either ImportError (Map FileName SolidityContractsDef)
 makeFilesDef files = sequence $ Map.map (fst <$>) resultPairs
-  where resultPairs = Map.mapWithKey (makeContractsDef resultTrans) files
+  where resultPairs = Map.mapWithKey (makeContractsDef resultTrans) $ Map.mapKeys collapse files
         resultTrans = Map.map (snd <$>) resultPairs
 
 makeContractsDef :: Map FileName (Either ImportError SolidityContractsDef) ->
