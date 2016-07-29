@@ -34,10 +34,14 @@ makeTypeLayout contractsL typesL t = case t of
   ContractT -> ContractTLayout addressBytes
   Enum names' -> EnumLayout (ceiling $ logBase (8::Double) $ fromIntegral $ length names')
   Using contract name ->
-    UsingLayout (typeUsedBytes $ typesLayout (contractsL Map.! contract) Map.! name)
+    UsingLayout (typeUsedBytes $ getType name $ typesLayout (getContract contract contractsL))
+    where
+      getContract contract = Map.findWithDefault (error $ "contract " ++ show contract ++ " not found in contractsL") contract
+      getType name = Map.findWithDefault (error $ "type " ++ show name ++ "not found in typesLayout") name
   Struct fields' ->
     let objsLayout' = makeObjsLayout typesL fields'
-        lastEnd = objEndBytes $ objsLayout' Map.! (objName $ last fields')
+        lastEnd = objEndBytes $ getObj (objName $ last fields') objsLayout' 
+        getObj name = Map.findWithDefault (error $ "struct name " ++ show name ++ " not found in objsLayout'") name
         usedBytes = nextLayoutStart lastEnd keyBytes        
     in StructLayout objsLayout' usedBytes
 

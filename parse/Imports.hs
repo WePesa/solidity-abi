@@ -96,7 +96,8 @@ validateImports files = slurp $ Map.map (Go . map fst . fileImports) files
       where
         shiftState mainFile (Go imports) = checkCycles $ combineState $ map getImport imports
           where 
-            getImport fileName = Map.findWithDefault (Err $ MissingImport mainFile fileName) fileName importStateMap
+            getImport fileName = Map.findWithDefault (Err $ MissingImport mainFile fileName) (mainFilePath <//> fileName) importStateMap
+            mainFilePath = takeDirectory mainFile
             checkCycles x@(Go newImports) = 
               if mainFile `elem` newImports
               then Err $ ImportCycle mainFile

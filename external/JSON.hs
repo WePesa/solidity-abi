@@ -29,10 +29,13 @@ jsonABI :: FileName -> Map FileName SolidityFile -> Either Value Value
 jsonABI fileName files = convertImportError $ do
   filesDef <- makeFilesDef files
   let
-    results = Map.mapWithKey (doFileABI files) filesDef
-    doFileABI files fName fileDef =
-      filesABI fName results (fileImports $ files Map.! fName) fileDef
-  result <- results Map.! fileName
+    files' = Map.mapKeys collapse files
+    results = Map.mapWithKey (doFileABI files') filesDef
+    doFileABI filesM fName fileDef =
+      filesABI fName results (fileImports $ getFile fName filesM) fileDef
+      where getFile name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in files'") name
+    getResult name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in results") name
+  result <- getResult fileName results
   return $ toJSON result
 
   where
@@ -59,12 +62,14 @@ filesABI fileName fileABIEs imports fileDef = do
 contractABI :: SolidityFileLayout -> ContractName -> SolidityContractDef -> Value
 contractABI fL name (ContractDef objs types _) =
   object $
-      (nonempty (pair "vars") $ varsABI (objsLayout $ fL Map.! name) objs) ++
+      (nonempty (pair "vars") $ varsABI (objsLayout $ getObj name fL) objs) ++
       (nonempty (pair "funcs") $ funcsABI objs) ++
-      (nonempty (pair "types") $ typesABI (typesLayout $ fL Map.! name) types) ++
+      (nonempty (pair "types") $ typesABI (typesLayout $ getType name fL) types) ++
       --(nonempty (pair "bases") $ toJSON $ map fst baseNames) ++
       (nonempty (pair "constr") $ constrABI name objs)
   where
+    getObj oName = Map.findWithDefault (error $ "contract name " ++ show oName ++ " not found in objsLayout") oName
+    getType tName = Map.findWithDefault (error $ "contract name " ++ show tName ++ " not found in typesLayout") tName
     nonempty :: (Value -> Pair) -> Value -> [Pair]
     nonempty f ob@(Object o) =
       if HashMap.null o
@@ -90,7 +95,8 @@ funcsABI objs = object $ catMaybes $ map funcABI objs
 typesABI :: SolidityTypesLayout -> SolidityTypesDef -> Value
 typesABI layout' types =
   object $ catMaybes $ map snd $ Map.toList $
-  Map.mapWithKey (\k t -> typeABI (layout' Map.! k) k t) types
+  Map.mapWithKey (\k t -> typeABI (getType k layout') k t) types
+  where getType name = Map.findWithDefault (error $ "contract name " ++ show name ++ " not found in layout'") name
 
 constrABI :: Identifier -> [SolidityObjDef] -> Value
 constrABI name objs = object $ maybe [] listABI argsM
@@ -111,7 +117,8 @@ listABI objs = do
 varABI :: SolidityObjsLayout -> SolidityObjDef -> Maybe Pair
 varABI layout' obj = do
   (name, tABI) <- objABI obj
-  let oB = objStartBytes $ layout' Map.! objName obj
+  let getObj name = Map.findWithDefault (error $ "variable name " ++ name ++ " not found in layout'") name
+      oB = objStartBytes $ getObj (objName obj) layout'
   return $ pair name $ object $ pair "atBytes" (toInteger oB) : tABI
 
 funcABI :: SolidityObjDef -> Maybe Pair
