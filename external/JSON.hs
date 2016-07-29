@@ -38,11 +38,11 @@ jsonABI fileName files = convertImportError $ do
   where
     convertImportError xEither = case xEither of
       Left (ImportCycle fBase) -> Left $
-        object [pair "importCycle" fBase]
+        object [pair "importError" "importCycle", pair "inFile" fBase]
       Left (MissingImport fBase fName) -> Left $
-        object [pair "missingImport" fName, pair "inFile" fBase]
+        object [pair "importError" "missingImport", pair "missingImport" fName, pair "inFile" fBase]
       Left (MissingSymbol fBase symName fName) -> Left $
-        object [pair "missingSymbol" symName, pair "fileName" fName, pair "inFile" fBase]
+        object [pair "importError" "missingSymbol", pair "missingSymbol" symName, pair "fileName" fName, pair "inFile" fBase]
       Right x -> Right x
 
 filesABI :: FileName ->
