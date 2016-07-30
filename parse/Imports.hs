@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveFunctor #-}
 module Imports (
   ImportError(..),
   getImportDefs,
@@ -70,7 +71,7 @@ collapse path = joinPath $ collapse' $ splitDirectories path
         collapse' ("." : x : rest) = collapse' $ x : rest
         collapse' (x : rest) = x : collapse' rest
 
-data ImportState a = Go a | Err ImportError | Done
+data ImportState a = Go a | Err ImportError | Done deriving (Functor)
 
 instance (Monoid a) => Monoid (ImportState a) where
   mappend x@(Err _) _ = x
@@ -82,10 +83,10 @@ instance (Monoid a) => Monoid (ImportState a) where
 
 -- Assumes that the filenames are all collapsed
 validateImports :: Map FileName SolidityFile -> Either ImportError (Map FileName SolidityFile)
-validateImports files = slurp $ Map.map (Go . map fst . fileImports) files
+validateImports files = slurp $ Map.map Go $ makeImportsRelative $ Map.map (map fst . fileImports) files
   where
     slurp importStateMap =
-      case combineState shiftedStateMap of
+      case foldMap (const [] <$>) shiftedStateMap of
         Done -> Right files
         Err e -> Left e
         _ -> slurp shiftedStateMap
@@ -93,10 +94,9 @@ validateImports files = slurp $ Map.map (Go . map fst . fileImports) files
 
     shift importStateMap = Map.mapWithKey shiftState importStateMap
       where
-        shiftState mainFile (Go imports) = checkCycles $ combineState $ map getImport imports
+        shiftState mainFile (Go imports) = checkCycles $ foldMap id $ map getImport imports
           where 
-            getImport fileName = Map.findWithDefault (Err $ MissingImport mainFile fileName) (mainFilePath <//> fileName) importStateMap
-            mainFilePath = takeDirectory mainFile
+            getImport fileName = Map.findWithDefault (Err $ MissingImport mainFile fileName) fileName importStateMap
             checkCycles x@(Go newImports) = 
               if mainFile `elem` newImports
               then Err $ ImportCycle mainFile
@@ -104,6 +104,6 @@ validateImports files = slurp $ Map.map (Go . map fst . fileImports) files
             checkCycles x = x
         shiftState _ x = x
 
-    combineState :: (Foldable t, Monoid a) => t (ImportState a) -> ImportState a
-    combineState = foldMap id
+    makeImportsRelative :: Map FileName [FileName] -> Map FileName [FileName]
+    makeImportsRelative = Map.mapWithKey $ \f -> map (takeDirectory f <//>)
 
