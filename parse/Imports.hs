@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveFunctor #-}
 module Imports (
   ImportError(..),
   getImportDefs,
@@ -8,9 +7,9 @@ module Imports (
 
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Foldable
+import Data.Foldable ()
 import Data.Monoid
-import Data.Traversable
+import Data.Traversable ()
 import System.FilePath
 
 import ParserTypes
@@ -67,7 +66,7 @@ prependIfRelative mp fn =
 collapse :: FilePath -> FilePath
 collapse path = joinPath $ collapse' $ splitDirectories path
   where collapse' [] = []
-        collapse' (x : ".." : rest) = collapse' rest
+        collapse' (_ : ".." : rest) = collapse' rest
         collapse' ("." : x : rest) = collapse' $ x : rest
         collapse' (x : rest) = x : collapse' rest
 
