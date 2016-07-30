@@ -49,6 +49,13 @@ contract = {
      "type name" : type defn,
      ...
    },
+   "libraryTypes" : {
+      "library name" : {
+        "type name" : type defn,
+        ...
+      },
+      ...
+   },
    "constr" : function args,
    // For libraries only
    "library" : true
