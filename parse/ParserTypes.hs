@@ -3,6 +3,7 @@ module ParserTypes where
 import Text.Parsec
 import Numeric.Natural
 
+type FileName = SourceName
 type Identifier = String
 type ContractName = Identifier
 type SourceCode = String
@@ -14,7 +15,16 @@ setContractName = setState
 getContractName :: SolidityParser ContractName
 getContractName = getState
 
-type SolidityFile = [SolidityContract]
+data ImportAs =
+    Unqualified |
+    StarPrefix ContractName |
+    Aliases [(ContractName, ContractName)]
+   
+data SolidityFile = 
+  SolidityFile {  
+    fileContracts :: [SolidityContract],
+    fileImports :: [(FileName, ImportAs)]
+  }
 
 data SolidityContract =
   Contract {
