@@ -5,6 +5,7 @@ module JSON (jsonABI) where
 import Data.Aeson hiding (String)
 import qualified Data.Aeson as Aeson (Value(String))
 import Data.Aeson.Types (Pair)
+import Data.Bifunctor
 import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.List as List
@@ -15,8 +16,10 @@ import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Vector as Vector
 import qualified Data.Text as Text
 
+import Qualify
 import Imports
 import Layout
+import Defn
 import DefnTypes
 import LayoutTypes
 import ParserTypes
@@ -25,11 +28,58 @@ import Selector
 instance ToJSON SolidityFile where
   toJSON f = either id id $ jsonABI "" (Map.singleton "" f)
 
+convertImportError :: ImportError -> Value
+convertImportError (ImportCycle fBase) =
+  object [pair "importError" "importCycle", 
+          pair "inFile" fBase]
+convertImportError (MissingImport fBase fName) = 
+  object [pair "importError" "missingImport",
+          pair "missingImport" fName,
+          pair "inFile" fBase]
+convertImportError (MissingSymbol fBase symName fName) = 
+  object [pair "importError" "missingSymbol", 
+          pair "missingSymbol" symName, 
+          pair "fileName" fName, 
+          pair "inFile" fBase]
+convertImportError (DuplicateSymbol fBase fName symName) = 
+  object [pair "importError" "duplicateSymbol", 
+          pair "fileName" fName, 
+          pair "duplicateSymbol" symName, 
+          pair "inFile" fBase]
+convertImportError (DuplicateFile fName) = 
+  object [pair "importError" "duplicateFile", 
+          pair "fileName" "fName"]
+
+convertLibraryError :: LibraryError -> Value
+convertDefnError :: DefnError -> Value
+convertLayoutError :: LayoutError -> Value
+convertQualifyError :: QualifyError -> Value
+
+data ContractABI =
+  ContractABI {
+    contractVarsABI :: Value,
+    contractFuncsABI :: Value,
+    contractTypesABI :: Map Identifier Value,
+    contractLibraryTypesABI :: Value,
+    contractConstrABI :: Value,
+    contractLibraryABI :: Bool
+    }
+
+instance ToJSON ContractABI where
+  toJSON (ContractABI v f t tL c l) =
+    object $ 
+      (nonempty (pair "vars" v)) ++
+      (nonempty (pair "funcs" f)) ++
+      (nonempty (pair "types" t)) ++
+      (nonempty (pair "libraryTypes" tL)) ++
+      (nonempty (pair "constr" c)) ++
+      (nonempty (pair "library" l))
+
 jsonABI :: FileName -> Map FileName SolidityFile -> Either Value Value
-jsonABI fileName files = convertImportError $ do
-  filesDef <- makeFilesDef files
+jsonABI fileName files = do
+  files' <- first convertImportError $ fixAllPaths files
+  filesDef <- first convertDefnError $ makeFilesDef files'
   let
-    files' = Map.mapKeys collapse files
     results = Map.mapWithKey (doFileABI files') filesDef
     doFileABI filesM fName fileDef =
       filesABI fName results (fileImports $ getFile fName filesM) fileDef
@@ -38,55 +88,33 @@ jsonABI fileName files = convertImportError $ do
   result <- getResult fileName results
   return $ toJSON result
 
-  where
-    convertImportError xEither = case xEither of
-      Left (ImportCycle fBase) -> Left $
-        object [pair "importError" "importCycle", pair "inFile" fBase]
-      Left (MissingImport fBase fName) -> Left $
-        object [pair "importError" "missingImport", pair "missingImport" fName, pair "inFile" fBase]
-      Left (MissingSymbol fBase symName fName) -> Left $
-        object [pair "importError" "missingSymbol", pair "missingSymbol" symName, pair "fileName" fName, pair "inFile" fBase]
-      Right x -> Right x
-
 filesABI :: FileName ->
             Map FileName (Either ImportError (Map ContractName Value)) ->
             [(FileName, ImportAs)] -> SolidityContractsDef ->
             Either ImportError (Map ContractName Value)
 filesABI fileName fileABIEs imports fileDef = do
-  importsABI <- getImportDefs fileName fileABIEs imports
+  importsABI <- first convertImportError $ getImportDefs fileName fileABIEs imports
   let
     fileLayout = makeContractsLayout fileDef
-    fileABI = Map.mapWithKey (contractABI fileLayout) fileDef
-  return $ fileABI `Map.union` importsABI
+    fileABI = sequence $ Map.mapWithKey (contractABI fileABI fileLayout) fileDef
+  return $ (first convertQualifyError fileABI) `Map.union` importsABI
 
-contractABI :: SolidityFileLayout -> ContractName -> SolidityContractDef -> Value
-contractABI fL name (ContractDef objs types _) =
-  object $
-      (nonempty (pair "vars") $ varsABI (objsLayout $ getObj name fL) objs) ++
-      (nonempty (pair "funcs") $ funcsABI objs) ++
-      (nonempty (pair "types") $ typesABI (typesLayout $ getType name fL) types) ++
-      --(nonempty (pair "bases") $ toJSON $ map fst baseNames) ++
-      (nonempty (pair "constr") $ constrABI name objs)
+contractABI :: Map ContractName Value -> SolidityFileLayout -> ContractName -> SolidityContractDef -> Either QualifyError ContractABI
+contractABI fABI fL name (ContractDef objs types lTypes _ isLibrary) = do
+  lTypesABI <- typesABI (typesLayout contractLayout) types)
+  return $ ContractABI {
+      contractVarsABI = varsABI (objsLayout contractLayout) objs,
+      contractFuncsABI = funcsABI objs,
+      contractTypesABI = typesABI (typesLayout contractLayout) types,
+      contractLibraryTypesABI = libTypesABI fABI lTypes,
+      contractConstrABI = constrABI name objs,
+      contractLibraryABI = isLibrary
+      }
   where
-    getObj oName = Map.findWithDefault (error $ "contract name " ++ show oName ++ " not found in objsLayout") oName
-    getType tName = Map.findWithDefault (error $ "contract name " ++ show tName ++ " not found in typesLayout") tName
-    nonempty :: (Value -> Pair) -> Value -> [Pair]
-    nonempty f ob@(Object o) =
-      if HashMap.null o
-      then []
-      else [f ob]
-    nonempty f ar@(Array a) =
-      if Vector.null a
-      then []
-      else [f ar]
-    nonempty f st@(Aeson.String s) =
-      if Text.null s
-      then []
-      else [f st]
-    nonempty _ Null = []
-    nonempty f x = [f x]
+    contractLayout = getContract name fL
+    getContract cName = Map.findWithDefault (error $ "contract name " ++ show cName ++ " not found in file layout") oName
 
-varsABI :: SolidityObjsLayout -> [SolidityObjDef] -> Value
+varsABI :: SolidityVarsLayout -> [SolidityObjDef] -> Value
 varsABI layout' objs = object $ catMaybes $ map (\o -> varABI layout' o) objs
 
 funcsABI :: [SolidityObjDef] -> Value
@@ -94,16 +122,20 @@ funcsABI objs = object $ catMaybes $ map funcABI objs
               
 typesABI :: SolidityTypesLayout -> SolidityTypesDef -> Value
 typesABI layout' types =
-  object $ catMaybes $ map snd $ Map.toList $
-  Map.mapWithKey (\k t -> typeABI (getType k layout') k t) types
+  object $ Map.elems $ Map.mapMaybeWithKey (\k t -> typeABI (getType k layout') k t) types
   where getType name = Map.findWithDefault (error $ "contract name " ++ show name ++ " not found in layout'") name
+
+libTypesABI :: Map ContractName Value -> [(ContractName, [Identifier])] -> Either QualifyError Value
+libTypesABI filesABI lTypes = object $ getQualifiedNames qAs lTypesABI
+  where
+    qAs = map (second $ map $ \x -> (x,x)) lTypes
+    lTYpesABI = Map.map contractLibraryTypesABI filesABI
 
 constrABI :: Identifier -> [SolidityObjDef] -> Value
 constrABI name objs = object $ maybe [] listABI argsM
   where
     argsM = getArgs =<< List.find isConstr objs
-    isConstr (ObjDef name' (SingleValue (Typedef name'')) (TupleValue _) _)
-      | name == name' && name == name'' = True
+    isConstr (ObjDef name' (TupleValue _) (TupleValue _) _) | name == name' = True
     isConstr _ = False
     getArgs (ObjDef _ _ (TupleValue args) _) = Just args
     getArgs _ = Nothing
@@ -114,12 +146,12 @@ listABI objs = do
   let realName = if null oName then "#" ++ show i else oName
   return $ pair realName $ object $ (pair "index" i) : oABI
 
-varABI :: SolidityObjsLayout -> SolidityObjDef -> Maybe Pair
-varABI layout' obj = do
-  (name, tABI) <- objABI obj
-  let getObj name = Map.findWithDefault (error $ "variable name " ++ name ++ " not found in layout'") name
-      oB = objStartBytes $ getObj (objName obj) layout'
-  return $ pair name $ object $ pair "atBytes" (toInteger oB) : tABI
+varABI :: SolidityVarsLayout -> SolidityObjDef -> Maybe Pair
+varABI layout' var = do
+  (name, tABI) <- objABI var
+  let getVar name = Map.findWithDefault (error $ "variable name " ++ name ++ " not found in layout'") name
+      vB = varStartBytes $ getVar (objName var) layout'
+  return $ pair name $ object $ pair "atBytes" (toInteger vB) : tABI
 
 funcABI :: SolidityObjDef -> Maybe Pair
 funcABI (ObjDef name (TupleValue vals) (TupleValue args) _) =
@@ -143,17 +175,10 @@ typeABI (EnumLayout tB) name (Enum names') =
     pair "bytes" $ toInteger tB,
     pair "names" names'
     ]
-typeABI (UsingLayout _) name (Using contract typeName') =
-  Just $ pair name $ object $ [
-    pair "type" "Using",
-    pair "usingContract" contract,
-    pair "usingType" typeName'
-    ]
 typeABI _ _ _ = Nothing
 
 objABI :: SolidityObjDef -> Maybe (String, [Pair])
-objABI (ObjDef name (SingleValue t) NoValue _) =
-  Just (name, basicTypeABI t)
+objABI (ObjDef name (SingleValue t) NoValue _ _ StorageStorage) = Just (name, basicTypeABI t)
 objABI _ = Nothing
 
 basicTypeABI :: SolidityBasicType -> [Pair]
@@ -207,3 +232,20 @@ tpair x y = (fromString x, object $ basicTypeABI y)
 
 lpair :: String -> [SolidityObjDef] -> Pair
 lpair x y = (fromString x, object $ listABI y)
+
+nonempty :: (Value -> Pair) -> Value -> [Pair]
+nonempty f ob@(Object o) =
+  if HashMap.null o
+  then []
+  else [f ob]
+nonempty f ar@(Array a) =
+  if Vector.null a
+  then []
+  else [f ar]
+nonempty f st@(Aeson.String s) =
+  if Text.null s
+  then []
+  else [f st]
+nonempty _ Null = []
+nonempty f x = [f x]
+

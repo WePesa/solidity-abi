@@ -19,10 +19,22 @@ simpleType =
   bytes' <|>
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
-  (fmap Typedef $ choice [
-    identifier,
-    concat <$> sequence [identifier, dot, identifier]
-    ])
+  (try $ do
+    libName <- identifier
+    dot
+    libType <- identifier
+    addLibraryType libName libType
+    return $ Typedef {
+      typedefName = libType,
+      typedefLibrary = Just libName
+    }) <|>
+  (do
+    typeName <- identifier
+    return $ Typedef {
+      typedefName = typeName,
+      typedefLIbrary = Nothing
+    })
+
   where
     simple name nameType = do
       reserved name

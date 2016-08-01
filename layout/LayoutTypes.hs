@@ -9,26 +9,26 @@ type IdentT a = Map Identifier a
 
 type SolidityFileLayout = SolidityContractsLayout
 type SolidityContractsLayout = IdentT SolidityContractLayout
-type SolidityObjsLayout = IdentT SolidityObjLayout
+type SolidityVarsLayout = IdentT SolidityVarLayout
 type SolidityTypesLayout = IdentT SolidityTypeLayout
 
 data SolidityContractLayout =
   ContractLayout {
-    objsLayout :: SolidityObjsLayout,
+    varsLayout :: SolidityVarsLayout,
     typesLayout :: SolidityTypesLayout
     }
   deriving (Show)
 
-data SolidityObjLayout =
-  ObjLayout {
-    objStartBytes :: StorageBytes,
-    objEndBytes :: StorageBytes
+data SolidityVarLayout =
+  VarLayout {
+    varStartBytes :: StorageBytes,
+    varEndBytes :: StorageBytes
     }
   deriving (Show)
 
 data SolidityTypeLayout =
   StructLayout {
-    structFieldsLayout :: SolidityObjsLayout,
+    structFieldsLayout :: SolidityVarsLayout,
     typeUsedBytes :: StorageBytes
     } |
   EnumLayout {

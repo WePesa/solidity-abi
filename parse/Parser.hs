@@ -1,10 +1,11 @@
 module Parser (
   parseSolidity,
   FileName, Identifier, ContractName, SourceCode,
-  ImportAs(..), SolidityFile(..), SolidityValue,
+  ImportAs(..), SolidityFile(..),
   SolidityContract(..), SolidityObjDef(..),
   SolidityTypeDef(..), SolidityTuple(..),
-  SolidityBasicType(..), SolidityNewType(..)
+  SolidityBasicType(..), SolidityNewType(..),
+  SolidityVisibility(..), SolidityStorage(..)
   ) where
 
 import Text.Parsec hiding (parse)
@@ -13,5 +14,5 @@ import File
 import ParserTypes
 
 parseSolidity :: FileName -> String -> Either ParseError SolidityFile
-parseSolidity sName sCode = runParser solidityFile "" sName sCode
+parseSolidity sName sCode = runParser solidityFile emptyContract sName sCode
 

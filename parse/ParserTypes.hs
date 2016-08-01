@@ -3,17 +3,40 @@ module ParserTypes where
 import Text.Parsec
 import Numeric.Natural
 
+type SolidityParser = Parsec SourceCode SolidityContract
+
+setContractName :: ContractName -> SolidityParser ()
+setContractName n = modifyState $ \c -> c{contractInfoName = n}
+
+addLibraryType :: ContractName -> Identifier -> SolidityParser ()
+addLibraryType n t = modifyState $ \c{contractLibraryTypes = lts} -> c{contractLibraryTypes = (n, t) : lts}
+
+addObj :: SolidityObjDef -> SolidityParser ()
+addObj o = modifyState $ \c{contractObjs = os} -> c{contractObjs = o:os}
+
+addType :: SolidityTypeDef -> SolidityParser ()
+addType t = modifyState $ \c{contractTypes = ts} -> c{contractObjs = t:ts}
+
+addBase :: ContractName -> SourceCode -> SolidityParser ()
+addBase n x = modifyState $ \c{contractBaseNames = bs} -> c{contractBaseNames = (n, x) : bs}
+
+setIsLibrary :: SolidityParser ()
+setIsLibrary = modifyState $ \c -> c{contractIsLibrary = True}
+
+emptyContract :: SolidityContract
+emptyContract = Contract {
+  contractName = "",
+  contractObjs = [],
+  contractTypes = [],
+  contractLibraryTypes = [],
+  contractBaseNames = [],
+  contractIsLibrary = False
+  }
+
 type FileName = SourceName
 type Identifier = String
 type ContractName = Identifier
 type SourceCode = String
-type SolidityParser = Parsec SourceCode ContractName
-
-setContractName :: ContractName -> SolidityParser ()
-setContractName = setState
-
-getContractName :: SolidityParser ContractName
-getContractName = getState
 
 data ImportAs =
     Unqualified |
@@ -24,42 +47,46 @@ data SolidityFile =
   SolidityFile {  
     fileContracts :: [SolidityContract],
     fileImports :: [(FileName, ImportAs)]
-  }
+  } deriving (Eq)
 
 data SolidityContract =
   Contract {
     contractName :: ContractName,
     contractObjs :: [SolidityObjDef],
     contractTypes :: [SolidityTypeDef],
-    contractBaseNames :: [(ContractName, SourceCode)]
+    contractLibraryTypes :: [(ContractName, Identifier)],
+    contractBaseNames :: [(ContractName, SourceCode)],
+    contractIsLibrary :: Bool
     }
-  deriving (Show)
+  deriving (Eq)
 
 data SolidityObjDef =
   ObjDef {
     objName :: Identifier,
     objValueType :: SolidityTuple,
     objArgType :: SolidityTuple,
-    objDefn :: String
+    objDefn :: String,
+    objVisibility :: SolidityVisibility,
+    objStorage :: SolidityStorage
     }
-  deriving (Show)
+  deriving (Eq)
+
+data SolidityVisibility = PublicVisible | PrivateVisible | InternalVisible | ExternalVisible deriving (Eq)
+
+data SolidityStorage = StorageStorage | MemoryStorage | ConstantStorage deriving (Eq)
            
 data SolidityTypeDef =
   TypeDef {
     typeName :: Identifier,
     typeDecl :: SolidityNewType
     }
-  deriving (Show)
+  deriving (Eq)
            
 data SolidityTuple =
   NoValue |
   SingleValue SolidityBasicType |
   TupleValue [SolidityObjDef]
-  deriving (Show)
-
-tupleHasValue :: SolidityTuple -> Bool
-tupleHasValue NoValue = False
-tupleHasValue _ = True
+  deriving (Eq)
 
 data SolidityBasicType =
   Boolean |
@@ -72,14 +99,12 @@ data SolidityBasicType =
   FixedArray  { elemType :: SolidityBasicType, fixedLength :: Natural } |
   DynamicArray{ elemType :: SolidityBasicType } |
   Mapping     { domType  :: SolidityBasicType, codType :: SolidityBasicType } |
-  Typedef     { typedefName :: Identifier }
-  deriving (Show)
+  Typedef     { typedefName :: Identifier, typedefLibrary :: Maybe ContractName }
+  deriving (Eq)
   
 data SolidityNewType =
   Enum        { names  :: [Identifier] } |
   Struct      { fields :: [SolidityObjDef] } |
-  Using       { usingContract :: ContractName, usingType :: Identifier } |
   ContractT
-  deriving (Show)
+  deriving (Eq)
   
-type SolidityValue = String

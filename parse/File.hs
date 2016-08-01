@@ -18,7 +18,7 @@ solidityFile = do
   whiteSpace
   toplevel <- many $ do
     let eitherImport = Right <$> solidityImport
-        eitherContract = Left <$> solidityContract
+        eitherContract = Left <$> (solidityContract >> getState)
     eitherImport <|> eitherContract
   eof
   return $ uncurry SolidityFile $ partitionEithers toplevel

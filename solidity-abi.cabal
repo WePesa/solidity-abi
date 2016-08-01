@@ -40,9 +40,11 @@ library
                        Lexer
                        Parser
                        DefnTypes
+                       Defn
                        ParserTypes
                        Types
                        Imports
+                       Libraries
   build-depends:       base,
                        containers,
                        parsec,
@@ -55,6 +57,7 @@ library
                        unordered-containers,
                        vector
   hs-source-dirs:      .
+                       algo
                        external
                        layout
                        parse

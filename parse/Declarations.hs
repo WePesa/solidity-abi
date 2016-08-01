@@ -12,39 +12,34 @@ import Lexer
 import ParserTypes
 import Types
 
-solidityContract :: SolidityParser SolidityContract
+solidityContract :: SolidityParser ()
 solidityContract = do
-  reserved "contract" <|> reserved "library"
-  contractName' <- identifier
-  setContractName contractName'
-  baseConstrs <- option [] $ do
+  (reserved "contract" >> return ()) <|> (reserved "library" >> setIsLibrary)
+  setContractName =<< identifier
+  sequence $ option [] $ do
     reserved "is"
     commaSep1 $ do
       name <- intercalate "." <$> sepBy1 identifier dot
       consArgs <- option "" parensCode
-      return (name, consArgs)
-  (contractTypes', contractObjs') <-
-    partitionEithers <$> (braces $ many solidityDeclaration)
-  return $ Contract {
-    contractName = contractName',
-    contractObjs = filter (tupleHasValue . objValueType) contractObjs',
-    contractTypes = contractTypes',
-    contractBaseNames = baseConstrs
-    }
+      addBase name consArgs
+  braces $ many solidityDeclaration
 
-solidityDeclaration :: SolidityParser (Either SolidityTypeDef SolidityObjDef)
+-- TODO: move this to layout and json modules.  Effect varies.
+--    contractObjs = filter (tupleHasValue . objValueType) contractObjs',
+
+solidityDeclaration :: SolidityParser ()
 solidityDeclaration =
-  fmap Left structDeclaration <|>
-  fmap Left enumDeclaration <|>
-  fmap Left usingDeclaration <|>
-  fmap Right functionDeclaration <|>
-  fmap Right modifierDeclaration <|>
-  fmap Right eventDeclaration <|>
-  fmap Right variableDeclaration
+  structDeclaration <|>
+  enumDeclaration <|>
+  usingDeclaration <|>
+  functionDeclaration <|>
+  modifierDeclaration <|>
+  eventDeclaration <|>
+  variableDeclaration
 
 {- New types -}
 
-structDeclaration :: SolidityParser SolidityTypeDef
+structDeclaration :: SolidityParser ()
 structDeclaration = do
   reserved "struct"
   structName <- identifier
@@ -52,110 +47,79 @@ structDeclaration = do
     decl <- simpleVariableDeclaration
     semi
     return decl
-  return $ TypeDef {
+  addType $ TypeDef {
     typeName = structName,
     typeDecl = Struct { fields = structFields }
     }
 
-enumDeclaration :: SolidityParser SolidityTypeDef
+enumDeclaration :: SolidityParser ()
 enumDeclaration = do
   reserved "enum"
   enumName <- identifier
   enumFields <- braces $ commaSep1 identifier
-  return $ TypeDef {
+  addType $ TypeDef {
     typeName = enumName,
     typeDecl = Enum { names = enumFields}
     }
 
-usingDeclaration :: SolidityParser SolidityTypeDef
+-- This one has no type-level effect, so we don't have to do anything
+usingDeclaration :: SolidityParser ()
 usingDeclaration = do
   reserved "using"
-  usingContract' <- identifier
   reserved "for"
-  string usingContract'
-  dot
-  usingName <- identifier
+  identifier
   semi
-  return $ TypeDef {
-    typeName = usingContract' ++ "." ++ usingName,
-    typeDecl = Using { usingContract = usingContract', usingType = usingName }
-    }
 
 {- Variables -}
 
-variableDeclaration :: SolidityParser SolidityObjDef
+variableDeclaration :: SolidityParser ()
 variableDeclaration = do
   vDecl <- simpleVariableDeclaration
   vDefn <- optionMaybe $ do
     reservedOp "="
     many $ noneOf ";"
   semi
-  return $ maybe vDecl (\vD -> vDecl{objDefn = vD}) vDefn
+  addObj $ maybe vDecl (\vD -> vDecl{objDefn = vD}) vDefn
 
 simpleVariableDeclaration :: SolidityParser SolidityObjDef
 simpleVariableDeclaration = do
   variableType <- simpleTypeExpression
-  variableVisible <- option True $
-                     (reserved "constant" >> return False) <|>
-                     (reserved "storage" >> return True) <|>
-                     (reserved "memory" >> return False) <|>
-                     (reserved "public" >> return True) <|>
-                     (reserved "private" >> return False) <|>
-                     (reserved "internal" >> return False)
-  variableName <- identifier
-  let objValueType' =
-        if variableVisible
-        then SingleValue variableType
-        else NoValue
-  return $ ObjDef {
-    objName = variableName,
-    objValueType = objValueType',
-    objArgType = NoValue,
-    objDefn = ""
-    }
+  typeMaker <- variableModifiers
+  variableName <- option "" identifier
+  return $ (typeMaker variableType){objName = variableName}
 
 {- Functions and function-like -}
 
-functionDeclaration :: SolidityParser SolidityObjDef
+functionDeclaration :: SolidityParser ()
 functionDeclaration = do
   reserved "function"
-  functionName <- fromMaybe "" <$> optionMaybe identifier
-  functionArgs <- tupleDeclaration
-  (functionRet, functionVisible, _, _) <- functionModifiers
+  name <- option "" identifier
+  args <- tupleDeclaration
+  objMaker <- functionModifiers
   functionBody <- bracedCode <|> (semi >> return "")
-  contractName' <- getContractName
-  let objValueType' = case () of
-        _ | null functionName || not functionVisible -> NoValue
-        _ | functionName == contractName' -> SingleValue $ Typedef contractName'
-        _ | otherwise -> functionRet
-  return $ ObjDef {
-    objName = functionName,
-    objValueType = objValueType',
-    objArgType = functionArgs,
-    objDefn = functionBody
-    }
+  addObj $ (objMaker name args){objDefn = functionBody}
 
-eventDeclaration :: SolidityParser SolidityObjDef
+eventDeclaration :: SolidityParser ()
 eventDeclaration = do
   reserved "event"
   name <- identifier
   logs <- tupleDeclaration
   optional $ reserved "anonymous"
   semi
-  return $ ObjDef {
+  addObj $ ObjDef {
     objName = name,
     objValueType = NoValue,
     objArgType = logs,
     objDefn = ""
     }
 
-modifierDeclaration :: SolidityParser SolidityObjDef
+modifierDeclaration :: SolidityParser ()
 modifierDeclaration = do
   reserved "modifier"
   name <- identifier
   args <- option NoValue tupleDeclaration
   defn <- bracedCode
-  return $ ObjDef {
+  addObj $ ObjDef {
     objName = name,
     objValueType = NoValue,
     objArgType = args,
@@ -165,38 +129,56 @@ modifierDeclaration = do
 {- Not really declarations -}
 
 tupleDeclaration :: SolidityParser SolidityTuple
-tupleDeclaration = fmap TupleValue $ parens $ commaSep $ do
-  partType <- simpleTypeExpression
-  optional $ (reserved "indexed") <|>
-             (reserved "storage") <|>
-             (reserved "memory")
-  partName <- option "" identifier
-  return $ ObjDef {
-    objName = partName,
-    objValueType = SingleValue partType,
-    objArgType = NoValue,
-    objDefn = ""
-    }
+tupleDeclaration = fmap TupleValue $ parens $ commaSep $ simpleVariableDeclaration
 
-functionModifiers :: SolidityParser (SolidityTuple, Bool, Bool, String)
-functionModifiers =
-  permute $
-  (\a b c d1 d2 d3 d4 -> (a, b, c, intercalate " " [d1, d2, d3, d4])) <$?>
-  (TupleValue [], returnModifier) <|?>
-  (True, visibilityModifier) <|?>
-  (True, mutabilityModifier) <|?>
-  ("", otherModifiers) <|?>
-  ("", otherModifiers) <|?>
-  ("", otherModifiers) <|?>
-  ("", otherModifiers) -- Fenceposts for the explicit modifiers
+visibilityModifier :: SolidityParser SolidityVisibility
+visibilityModifier =
+  (reserved "public" >> PublicVisible) <|>
+  (reserved "private" >> PrivateVisible) <|>
+  (reserved "internal" >> InternalVisible) <|>
+  (reserved "external" >> ExternalVisible)
+
+storageModifier :: SolidityParser SolidityStorage
+storageModifier =
+  (reserved "constant" >> return ConstantStorage) <|>
+  (reserved "storage" >> return StorageStorage) <|>
+  (reserved "memory" >> return MemoryStorage)
+
+variableModifiers :: SolidityParser (SolidityTuple -> SolidityObjDef)
+variableModifiers variableType =
+  permute $ (\v s ->
+    ObjDef {
+      objName = "",
+      objValueType = SingleValue variableType,
+      objArgType = NoValue,
+      objDefn = "",
+      objVisibility = v,
+      objStorage = s
+    }) <$?>
+    (InternalVisible, visibilityModifier) <|?>
+    (StorageStorage, storageModifier)
+
+functionModifiers :: SolidityParser (Identifier -> SolidityTuple -> SolidityObjDef)
+functionModifiers name args =
+  permute $ (\r v s _ _ _ _ ->
+    ObjDef {
+      objName = name,
+      objValueType = r,
+      objArgType = args,
+      objDefn = "",
+      objVisibility = v,
+      objStorage = s
+    })
+    (TupleValue [], returnModifier) <|?>
+    (PublicVisible, visibilityModifier) <|?>
+    (MemoryStorage, storageModifier) <|?>
+    ("", otherModifiers) <|?>
+    ("", otherModifiers) <|?>
+    ("", otherModifiers) <|?>
+    ("", otherModifiers) -- Fenceposts for the explicit modifiers
+
   where
-    returnModifier =
-      reserved "returns" >> tupleDeclaration
-    visibilityModifier =
-      ((reserved "public" <|> reserved "external") >> return True) <|>
-      ((reserved "internal" <|> reserved "private") >> return False)
-    mutabilityModifier =
-      reserved "constant" >> return False
+    returnModifier = reserved "returns" >> tupleDeclaration
     otherModifiers = fmap (intercalate " ") $ many $ do
       name <- identifier
       args <- optionMaybe parensCode
