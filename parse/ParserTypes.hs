@@ -6,19 +6,19 @@ import Numeric.Natural
 type SolidityParser = Parsec SourceCode SolidityContract
 
 setContractName :: ContractName -> SolidityParser ()
-setContractName n = modifyState $ \c -> c{contractInfoName = n}
+setContractName n = modifyState $ \c -> c{contractName = n}
 
 addLibraryType :: ContractName -> Identifier -> SolidityParser ()
-addLibraryType n t = modifyState $ \c{contractLibraryTypes = lts} -> c{contractLibraryTypes = (n, t) : lts}
+addLibraryType n t = modifyState $ \c@Contract{contractLibraryTypes = lts} -> c{contractLibraryTypes = (n, t) : lts}
 
 addObj :: SolidityObjDef -> SolidityParser ()
-addObj o = modifyState $ \c{contractObjs = os} -> c{contractObjs = o:os}
+addObj o = modifyState $ \c@Contract{contractObjs = os} -> c{contractObjs = o:os}
 
 addType :: SolidityTypeDef -> SolidityParser ()
-addType t = modifyState $ \c{contractTypes = ts} -> c{contractObjs = t:ts}
+addType t = modifyState $ \c@Contract{contractTypes = ts} -> c{contractTypes = t:ts}
 
 addBase :: ContractName -> SourceCode -> SolidityParser ()
-addBase n x = modifyState $ \c{contractBaseNames = bs} -> c{contractBaseNames = (n, x) : bs}
+addBase n x = modifyState $ \c@Contract{contractBaseNames = bs} -> c{contractBaseNames = (n, x) : bs}
 
 setIsLibrary :: SolidityParser ()
 setIsLibrary = modifyState $ \c -> c{contractIsLibrary = True}
@@ -42,6 +42,7 @@ data ImportAs =
     Unqualified |
     StarPrefix ContractName |
     Aliases [(ContractName, ContractName)]
+    deriving (Eq)
    
 data SolidityFile = 
   SolidityFile {  

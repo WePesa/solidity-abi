@@ -18,6 +18,7 @@ import qualified Data.Text as Text
 
 import Qualify
 import Imports
+import Libraries
 import Layout
 import Defn
 import DefnTypes
@@ -51,9 +52,16 @@ convertImportError (DuplicateFile fName) =
           pair "fileName" "fName"]
 
 convertLibraryError :: LibraryError -> Value
+convertLibraryError = undefined
+
 convertDefnError :: DefnError -> Value
+convertDefnError = undefined
+
 convertLayoutError :: LayoutError -> Value
-convertQualifyError :: QualifyError -> Value
+convertLayoutError = undefined
+
+convertQualifyError :: QualifyError a b c -> Value
+convertQualifyError = undefined
 
 data ContractABI =
   ContractABI {
@@ -99,11 +107,11 @@ filesABI fileName fileABIEs imports fileDef = do
     fileABI = sequence $ Map.mapWithKey (contractABI fileABI fileLayout) fileDef
   return $ (first convertQualifyError fileABI) `Map.union` importsABI
 
-contractABI :: Map ContractName Value -> SolidityFileLayout -> ContractName -> SolidityContractDef -> Either QualifyError ContractABI
+contractABI :: Map ContractName Value -> SolidityFileLayout -> ContractName -> SolidityContractDef -> Either (QualifyError ContractName Identifier Identifier) ContractABI
 contractABI fABI fL name (ContractDef objs types lTypes _ isLibrary) = do
-  lTypesABI <- typesABI (typesLayout contractLayout) types)
+  lTypesABI <- typesABI (typesLayout contractLayout) types
   return $ ContractABI {
-      contractVarsABI = varsABI (objsLayout contractLayout) objs,
+      contractVarsABI = varsABI (varsLayout contractLayout) objs,
       contractFuncsABI = funcsABI objs,
       contractTypesABI = typesABI (typesLayout contractLayout) types,
       contractLibraryTypesABI = libTypesABI fABI lTypes,
@@ -112,7 +120,7 @@ contractABI fABI fL name (ContractDef objs types lTypes _ isLibrary) = do
       }
   where
     contractLayout = getContract name fL
-    getContract cName = Map.findWithDefault (error $ "contract name " ++ show cName ++ " not found in file layout") oName
+    getContract cName = Map.findWithDefault (error $ "contract name " ++ show cName ++ " not found in file layout") cName
 
 varsABI :: SolidityVarsLayout -> [SolidityObjDef] -> Value
 varsABI layout' objs = object $ catMaybes $ map (\o -> varABI layout' o) objs
@@ -125,11 +133,11 @@ typesABI layout' types =
   object $ Map.elems $ Map.mapMaybeWithKey (\k t -> typeABI (getType k layout') k t) types
   where getType name = Map.findWithDefault (error $ "contract name " ++ show name ++ " not found in layout'") name
 
-libTypesABI :: Map ContractName Value -> [(ContractName, [Identifier])] -> Either QualifyError Value
+libTypesABI :: Map ContractName Value -> [(ContractName, [Identifier])] -> Either (QualifyError ContractName Identifier Identifier) Value
 libTypesABI filesABI lTypes = object $ getQualifiedNames qAs lTypesABI
   where
     qAs = map (second $ map $ \x -> (x,x)) lTypes
-    lTYpesABI = Map.map contractLibraryTypesABI filesABI
+    lTypesABI = Map.map contractLibraryTypesABI filesABI
 
 constrABI :: Identifier -> [SolidityObjDef] -> Value
 constrABI name objs = object $ maybe [] listABI argsM

@@ -11,7 +11,7 @@ data SolidityContractDef =
     typesDef :: SolidityTypesDef,
     libraryTypes :: [(ContractName, [Identifier])],
     inherits :: [(ContractName, SolidityContractDef)]
-    } deriving (Show)
+    }
 type SolidityContractsDef = IdentT SolidityContractDef
 type SolidityTypesDef = IdentT SolidityNewType
 type SolidityObjsDef = [SolidityObjDef]

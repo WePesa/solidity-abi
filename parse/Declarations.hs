@@ -16,13 +16,14 @@ solidityContract :: SolidityParser ()
 solidityContract = do
   (reserved "contract" >> return ()) <|> (reserved "library" >> setIsLibrary)
   setContractName =<< identifier
-  sequence $ option [] $ do
+  optional $ do
     reserved "is"
     commaSep1 $ do
       name <- intercalate "." <$> sepBy1 identifier dot
       consArgs <- option "" parensCode
       addBase name consArgs
-  braces $ many solidityDeclaration
+    return ()
+  braces $ skipMany solidityDeclaration
 
 -- TODO: move this to layout and json modules.  Effect varies.
 --    contractObjs = filter (tupleHasValue . objValueType) contractObjs',
@@ -69,6 +70,7 @@ usingDeclaration = do
   reserved "for"
   identifier
   semi
+  return ()
 
 {- Variables -}
 
@@ -110,7 +112,9 @@ eventDeclaration = do
     objName = name,
     objValueType = NoValue,
     objArgType = logs,
-    objDefn = ""
+    objDefn = "",
+    objVisibility = PublicVisible,
+    objStorage = MemoryStorage
     }
 
 modifierDeclaration :: SolidityParser ()
@@ -123,7 +127,9 @@ modifierDeclaration = do
     objName = name,
     objValueType = NoValue,
     objArgType = args,
-    objDefn = defn
+    objDefn = defn,
+    objVisibility = PublicVisible,
+    objStorage = MemoryStorage
     }
 
 {- Not really declarations -}
@@ -133,10 +139,10 @@ tupleDeclaration = fmap TupleValue $ parens $ commaSep $ simpleVariableDeclarati
 
 visibilityModifier :: SolidityParser SolidityVisibility
 visibilityModifier =
-  (reserved "public" >> PublicVisible) <|>
-  (reserved "private" >> PrivateVisible) <|>
-  (reserved "internal" >> InternalVisible) <|>
-  (reserved "external" >> ExternalVisible)
+  (reserved "public" >> return PublicVisible) <|>
+  (reserved "private" >> return PrivateVisible) <|>
+  (reserved "internal" >> return InternalVisible) <|>
+  (reserved "external" >> return ExternalVisible)
 
 storageModifier :: SolidityParser SolidityStorage
 storageModifier =
@@ -144,10 +150,10 @@ storageModifier =
   (reserved "storage" >> return StorageStorage) <|>
   (reserved "memory" >> return MemoryStorage)
 
-variableModifiers :: SolidityParser (SolidityTuple -> SolidityObjDef)
-variableModifiers variableType =
+variableModifiers :: SolidityParser (SolidityBasicType -> SolidityObjDef)
+variableModifiers =
   permute $ (\v s ->
-    ObjDef {
+    \variableType -> ObjDef {
       objName = "",
       objValueType = SingleValue variableType,
       objArgType = NoValue,
@@ -159,16 +165,16 @@ variableModifiers variableType =
     (StorageStorage, storageModifier)
 
 functionModifiers :: SolidityParser (Identifier -> SolidityTuple -> SolidityObjDef)
-functionModifiers name args =
+functionModifiers =
   permute $ (\r v s _ _ _ _ ->
-    ObjDef {
+    \name args -> ObjDef {
       objName = name,
       objValueType = r,
       objArgType = args,
       objDefn = "",
       objVisibility = v,
       objStorage = s
-    })
+    }) <$?>
     (TupleValue [], returnModifier) <|?>
     (PublicVisible, visibilityModifier) <|?>
     (MemoryStorage, storageModifier) <|?>

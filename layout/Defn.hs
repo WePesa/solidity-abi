@@ -10,9 +10,10 @@ import Data.Maybe
 import Data.Traversable
 
 import Imports
+import DefnTypes
 import ParserTypes
 
-type DefnError = DefnImportError ImportError | MissingBase ContactName ContractName
+data DefnError = DefnImportError ImportError | MissingBase ContractName ContractName
 
 instance Monoid SolidityContractDef where
   mappend (ContractDef o1 t1 lt1 i1) (ContractDef o2 t2 lt2 i2) =
@@ -20,10 +21,10 @@ instance Monoid SolidityContractDef where
       -- o2 o1 is important : objects of the base come before objects of derived
       objsDef = List.unionBy ((==) `on` objName) o2 o1,
       typesDef = t1 `Map.union` t2,
-      libraryTypes = lt1 `Map.Union` lt2,
+      libraryTypes = lt1 ++ lt2,
       inherits = i1 ++ i2
       }
-  mempty = ContractDef [] Map.empty []
+  mempty = ContractDef [] Map.empty [] []
 
 makeFilesDef :: Map FileName SolidityFile -> Either DefnError (Map FileName SolidityContractsDef)
 makeFilesDef files = do
@@ -43,25 +44,28 @@ makeLinearizedContracts fileDefs fileName (SolidityFile contracts imports) = do
   (contractsDef, contractsDefTrans) <- makeContractsDef importDefs contracts
   let
     linearizedContracts = c3Linearized contractsDef importDefs
-    contractTypes = makeTypesDef $ map (flip TypeDef ContractT) $ Map.keys contractDefsTrans
+    contractTypes = makeTypesDef $ map (flip TypeDef ContractT) $ Map.keys contractsDefTrans
+    addContractTypes contract = contract{typesDef = typesDef contract `Map.union` contractTypes}
     result = Map.map addContractTypes linearizedContracts
   return $ (result, result `Map.union` importDefs)
-  where
-    addContractTypes contract = contract{typesDef = typesDef contract `Map.union` contractTypes}
 
 makeContractsDef :: SolidityContractsDef -> [SolidityContract] -> Either DefnError (SolidityContractsDef, SolidityContractsDef)
-makeContractsDef importDefs contracts = (contractDefs, contractDefsTrans)
+makeContractsDef importDefs contracts = do
+  contractDefs <- contractDefsE
+  contractDefsTrans <- contractDefsTransE
+  return (contractDefs, contractDefsTrans)
   where
-    contractDefs = Map.fromList <$> mapM (makeContractsDef contractDefsTrans) contracts
-    contractDefsTrans = Map.union importDefs =<< contractDefs
+    contractDefsE =
+      Map.fromList <$> mapM (\c -> (\cd -> makeContractDef cd c ) =<< contractDefsTransE) contracts
+    contractDefsTransE = Map.union importDefs <$> contractDefsE
 
 makeContractDef :: SolidityContractsDef -> SolidityContract -> Either DefnError (ContractName, SolidityContractDef)
-makeContractDef allDefs (Contract name objs types lTypes bases) = do
+makeContractDef allDefs (Contract name objs types lTypes bases _) = do
   baseDefs <- mapM getContractDef bases
   return $ (name, ContractDef {
     objsDef = objs,
     typesDef = makeTypesDef types,
-    libraryTypesDef = librariesM,
+    libraryTypes = librariesM,
     inherits = baseDefs
     })
 
@@ -69,7 +73,7 @@ makeContractDef allDefs (Contract name objs types lTypes bases) = do
     librariesM = map collect $ List.groupBy ((==) `on` fst) lTypes
     collect pairs = (fst $ head pairs, map snd pairs)
     getContractDef (bname, _) = do
-      baseDef <- Map.findWithDefault (Left $ MissingBase name bName) bname $ Map.map Right allDefs
+      baseDef <- Map.findWithDefault (Left $ MissingBase name bname) bname $ Map.map Right allDefs
       return (bname, baseDef)
 
 makeTypesDef :: [SolidityTypeDef] -> SolidityTypesDef

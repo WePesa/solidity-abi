@@ -32,7 +32,7 @@ prettyArgTypes args =
   catMaybes $ map (fmap pretty . varType) args
 
 varType :: SolidityObjDef -> Maybe SolidityBasicType
-varType (ObjDef _ (SingleValue t) NoValue _) = Just t
+varType (ObjDef _ (SingleValue t) NoValue _ _ _) = Just t
 varType _ = Nothing
 
 pretty :: SolidityBasicType -> Doc
@@ -47,6 +47,6 @@ pretty (FixedArray t l) = (pretty t) <> text "[" <> natural l <> text "]"
 pretty (DynamicArray t) = (pretty t) <> text "[]"
 pretty (Mapping d c) =
   text "mapping" <+> (parens $ pretty d <+> text "=>" <+> pretty c)
-pretty (Typedef name) = text name
+pretty (Typedef name _) = text name
 
 natural = integer . toInteger

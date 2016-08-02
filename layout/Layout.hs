@@ -3,7 +3,7 @@ module Layout (
   SolidityFileLayout, SolidityContractsLayout,
   SolidityTypesLayout, SolidityVarsLayout,
   SolidityContractLayout(..), SolidityTypeLayout(..),
-  SolidityVarLayout(..),
+  SolidityVarLayout(..), LayoutError(..),
   StorageBytes
   ) where
 
@@ -12,7 +12,7 @@ import qualified Data.Map as Map
 import Data.Bifunctor
 import Data.Maybe
 
-import DefnTypes
+import DefnTypes hiding (IdentT)
 import ParserTypes
 import LayoutTypes
 import Libraries
@@ -25,30 +25,31 @@ data LayoutError =
 makeContractsLayout :: SolidityContractsDef -> Either LayoutError SolidityContractsLayout
 makeContractsLayout contracts = do
   first LayoutLibraryError $ validateLibraries contracts
-  let contractsL = sequence $ Map.mapWithKey (makeContractLayout contractsL) contracts
+  let contractsL = sequence $ Map.mapWithKey (\n cD -> (\cL -> makeContractLayout cL n cD) =<< contractsL) contracts
   contractsL
 
-makeContractLayout :: SolidityContractsLayout -> SolidityContractDef -> ContractName
+makeContractLayout :: SolidityContractsLayout -> ContractName -> SolidityContractDef
                       -> Either LayoutError SolidityContractLayout
-makeContractLayout contractsL (ContractDef vars types lTypes _) name = do
-  lTypesL <- first LayoutLibraryError <$> getLibraryLayouts name contractsL lTypes
-  let typesL = sequence $ Map.mapWithKey (makeTypeLayout typesL lTypesL) types
+makeContractLayout contractsL name (ContractDef vars types lTypes _) = do
+  lTypesL <- first LayoutLibraryError $ getLibraryLayouts name contractsL lTypes
+  let typesLE = sequence $ Map.mapWithKey (\n t -> (\tL -> makeTypeLayout tL lTypesL n t) =<< typesLE) types
+  typesL <- typesLE
+  varsL <- makeVarsLayout typesL lTypesL vars
   return $ ContractLayout {
-    varsLayout = makeVarsLayout typesL lTypesL vars,
+    varsLayout = varsL,
     typesLayout = typesL
     }      
 
-makeTypeLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> SolidityNewType ->
-                  Identifier -> Either LayoutError SolidityTypeLayout
-makeTypesLayout _ _ ContractT _ = return $ ContractTLayout addressBytes
-makeTypesLayout _ _ (Enum names) _ =
+makeTypeLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> Identifier -> SolidityNewType -> Either LayoutError SolidityTypeLayout
+makeTypesLayout _ _ _ ContractT = return $ ContractTLayout addressBytes
+makeTypesLayout _ _ _ (Enum names)  =
    return $ EnumLayout (ceiling $ logBase (8::Double) $ fromIntegral $ length names)
-makeTypeLayout typesL lTypesL (Struct fields) tName = do
+makeTypeLayout typesL lTypesL tName (Struct fields) = do
   varsLayout <- makeVarsLayout typesL lTypesL fields
   let getObj name = Map.findWithDefault (Left $ MissingField tName name) name
-  lastEnd <- varEndBytes <$> getObj (varName $ last fields) varsLayout 
+  lastEnd <- varEndBytes <$> (getObj (objName $ last fields) $ Map.map Right varsLayout)
   let usedBytes = nextLayoutStart lastEnd keyBytes        
-  return $ StructLayout varsLayout' usedBytes
+  return $ StructLayout varsLayout usedBytes
 
 makeVarsLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> [SolidityObjDef] ->
                   Either LayoutError SolidityVarsLayout
@@ -62,8 +63,8 @@ makeVarsLayout typesL lTypesL objs = do
 makeVarLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> SolidityObjDef ->
                  Either LayoutError (Maybe (StorageBytes -> (Identifier, SolidityVarLayout)))
 makeVarLayout typesL lTypesL
-              ObjDef{varName = name, varValueType = SingleValue t,
-                     varArgType = NoValue, varStorage= StorageStorage} = do
+              ObjDef{objName = name, objValueType = SingleValue t,
+                     objArgType = NoValue, objStorage= StorageStorage} = do
   tUsed <- usedBytes typesL lTypesL t
   return $ Just $ \lastOffEnd ->
     let startBytes = nextLayoutStart lastOffEnd tUsed
@@ -85,18 +86,18 @@ usedBytes typesL lTypesL t = case t of
   FixedBytes b -> return b
   DynamicBytes -> return keyBytes
   String -> return keyBytes
-  FixedArray typ l -> return $ keyBytes * numKeys
-    where
-      elemSize = usedBytes typesL lTypesL typ
-      (newEach, numKeys) =
-        if elemSize <= 32
-        then (32 `quot` elemSize,
-              l `quot` newEach + (if l `rem` newEach == 0 then 0 else 1))
-        else (1, l * (elemSize `quot` 32)) -- always have rem = 0
+  FixedArray typ l -> do 
+    elemSize <- usedBytes typesL lTypesL typ
+    let (newEach, numKeys) =
+          if elemSize <= 32
+          then (32 `quot` elemSize,
+                l `quot` newEach + (if l `rem` newEach == 0 then 0 else 1))
+          else (1, l * (elemSize `quot` 32)) -- always have rem = 0
+    return $ keyBytes * numKeys
   DynamicArray _ -> return keyBytes
   Mapping _ _ -> return $ keyBytes
-  Typedef name libM -> typeUsedBytes <$> getType name $ maybe typesL (lTypesL Map.!) libM
-    where getType name = Map.findWithDefault $ Left $ UnknownType name libM
+  Typedef name libM -> typeUsedBytes <$> (getType name $ maybe typesL (lTypesL Map.!) libM)
+    where getType name m = Map.findWithDefault (Left $ UnknownType name libM) name $ Map.map Right m
 
 nextLayoutStart :: StorageBytes -> StorageBytes -> StorageBytes
 nextLayoutStart 0 _ = 0

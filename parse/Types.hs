@@ -32,7 +32,7 @@ simpleType =
     typeName <- identifier
     return $ Typedef {
       typedefName = typeName,
-      typedefLIbrary = Nothing
+      typedefLibrary = Nothing
     })
 
   where

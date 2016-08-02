@@ -53,6 +53,7 @@ library
                        filepath,
                        pretty,
                        aeson,
+                       semigroups,
                        cryptohash,
                        unordered-containers,
                        vector
