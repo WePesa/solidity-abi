@@ -32,7 +32,7 @@ makeTypeLayout :: SolidityContractsLayout -> SolidityTypesLayout -> SolidityNewT
                    -> SolidityTypeLayout
 makeTypeLayout contractsL typesL t = case t of
   ContractT -> ContractTLayout addressBytes
-  Enum names' -> EnumLayout (ceiling $ logBase (8::Double) $ fromIntegral $ length names')
+  Enum names' -> EnumLayout (ceiling $ logBase (256::Double) $ fromIntegral $ length names')
   Using contract name ->
     UsingLayout (typeUsedBytes $ getType name $ typesLayout (getContract contract contractsL))
     where
