@@ -63,11 +63,12 @@ contractABI :: SolidityFileLayout -> ContractName -> SolidityContractDef -> Valu
 contractABI fL name (ContractDef objs types _) =
   object $
       (nonempty (pair "vars") $ varsABI (objsLayout $ getObj name fL) objs) ++
-      (nonempty (pair "funcs") $ funcsABI objs) ++
-      (nonempty (pair "types") $ typesABI (typesLayout $ getType name fL) types) ++
+      (nonempty (pair "funcs") $ funcsABI typesL objs) ++
+      (nonempty (pair "types") $ typesABI typesL types) ++
       --(nonempty (pair "bases") $ toJSON $ map fst baseNames) ++
       (nonempty (pair "constr") $ constrABI name objs)
   where
+    typesL = typesLayout $ getType name fL
     getObj oName = Map.findWithDefault (error $ "contract name " ++ show oName ++ " not found in objsLayout") oName
     getType tName = Map.findWithDefault (error $ "contract name " ++ show tName ++ " not found in typesLayout") tName
     nonempty :: (Value -> Pair) -> Value -> [Pair]
@@ -89,8 +90,8 @@ contractABI fL name (ContractDef objs types _) =
 varsABI :: SolidityObjsLayout -> [SolidityObjDef] -> Value
 varsABI layout' objs = object $ catMaybes $ map (\o -> varABI layout' o) objs
 
-funcsABI :: [SolidityObjDef] -> Value
-funcsABI objs = object $ catMaybes $ map funcABI objs
+funcsABI :: SolidityTypesLayout -> [SolidityObjDef] -> Value
+funcsABI typesL objs = object $ catMaybes $ map (funcABI typesL) objs
               
 typesABI :: SolidityTypesLayout -> SolidityTypesDef -> Value
 typesABI layout' types =
@@ -121,14 +122,14 @@ varABI layout' obj = do
       oB = objStartBytes $ getObj (objName obj) layout'
   return $ pair name $ object $ pair "atBytes" (toInteger oB) : tABI
 
-funcABI :: SolidityObjDef -> Maybe Pair
-funcABI (ObjDef name (TupleValue vals) (TupleValue args) _) =
+funcABI :: SolidityTypesLayout -> SolidityObjDef -> Maybe Pair
+funcABI typesL (ObjDef name (TupleValue vals) (TupleValue args) _) =
   Just $ pair name $ object [
-           pair "selector" $ selector name args vals,
+           pair "selector" $ selector typesL name args vals,
            lpair "args" args,
            lpair "vals" vals
            ]
-funcABI _ = Nothing
+funcABI _ _ = Nothing
 
 typeABI :: SolidityTypeLayout -> Identifier -> SolidityNewType -> Maybe Pair
 typeABI (StructLayout fieldsL tB) name (Struct fields') =
