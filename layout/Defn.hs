@@ -16,15 +16,16 @@ import ParserTypes
 data DefnError = DefnImportError ImportError | MissingBase ContractName ContractName
 
 instance Monoid SolidityContractDef where
-  mappend (ContractDef o1 t1 lt1 i1) (ContractDef o2 t2 lt2 i2) =
+  mappend (ContractDef o1 t1 lt1 i1 l1) (ContractDef o2 t2 lt2 i2 _) =
     ContractDef {
       -- o2 o1 is important : objects of the base come before objects of derived
       objsDef = List.unionBy ((==) `on` objName) o2 o1,
       typesDef = t1 `Map.union` t2,
       libraryTypes = lt1 ++ lt2,
-      inherits = i1 ++ i2
+      inherits = i1 ++ i2,
+      library = l1
       }
-  mempty = ContractDef [] Map.empty [] []
+  mempty = ContractDef [] Map.empty [] [] False
 
 makeFilesDef :: Map FileName SolidityFile -> Either DefnError (Map FileName SolidityContractsDef)
 makeFilesDef files = do
@@ -60,13 +61,14 @@ makeContractsDef importDefs contracts = do
     contractDefsTransE = Map.union importDefs <$> contractDefsE
 
 makeContractDef :: SolidityContractsDef -> SolidityContract -> Either DefnError (ContractName, SolidityContractDef)
-makeContractDef allDefs (Contract name objs types lTypes bases _) = do
+makeContractDef allDefs (Contract name objs types lTypes bases isL) = do
   baseDefs <- mapM getContractDef bases
   return $ (name, ContractDef {
     objsDef = objs,
     typesDef = makeTypesDef types,
     libraryTypes = librariesM,
-    inherits = baseDefs
+    inherits = baseDefs,
+    library = isL
     })
 
   where

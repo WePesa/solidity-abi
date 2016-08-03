@@ -30,7 +30,7 @@ makeContractsLayout contracts = do
 
 makeContractLayout :: SolidityContractsLayout -> ContractName -> SolidityContractDef
                       -> Either LayoutError SolidityContractLayout
-makeContractLayout contractsL name (ContractDef vars types lTypes _) = do
+makeContractLayout contractsL name (ContractDef vars types lTypes _ _) = do
   lTypesL <- first LayoutLibraryError $ getLibraryLayouts name contractsL lTypes
   let typesLE = sequence $ Map.mapWithKey (\n t -> (\tL -> makeTypeLayout tL lTypesL n t) =<< typesLE) types
   typesL <- typesLE

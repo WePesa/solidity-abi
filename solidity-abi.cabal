@@ -43,7 +43,9 @@ library
                        Defn
                        ParserTypes
                        Types
+                       DAG
                        Imports
+                       Qualify
                        Libraries
   build-depends:       base,
                        containers,
