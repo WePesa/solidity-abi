@@ -1,3 +1,4 @@
+{-# LANGUAGE RecursiveDo #-}
 module Layout (
   makeContractsLayout,
   SolidityFileLayout, SolidityContractsLayout,
@@ -8,6 +9,8 @@ module Layout (
   ) where
 
 import qualified Data.Map as Map
+
+import Control.Monad.Fix
 
 import Data.Bifunctor
 import Data.Maybe
@@ -23,17 +26,16 @@ data LayoutError =
   UnknownType Identifier (Maybe ContractName)
 
 makeContractsLayout :: SolidityContractsDef -> Either LayoutError SolidityContractsLayout
-makeContractsLayout contracts = do
+makeContractsLayout contracts = mdo
   first LayoutLibraryError $ validateLibraries contracts
-  let contractsL = sequence $ Map.mapWithKey (\n cD -> (\cL -> makeContractLayout cL n cD) =<< contractsL) contracts
-  contractsL
+  contractsL <- sequence $ Map.mapWithKey (makeContractLayout contractsL) contracts
+  return contractsL
 
 makeContractLayout :: SolidityContractsLayout -> ContractName -> SolidityContractDef
                       -> Either LayoutError SolidityContractLayout
-makeContractLayout contractsL name (ContractDef vars types lTypes _ _) = do
+makeContractLayout contractsL name (ContractDef vars types lTypes _ _) = mdo
   lTypesL <- first LayoutLibraryError $ getLibraryLayouts name contractsL lTypes
-  let typesLE = sequence $ Map.mapWithKey (\n t -> (\tL -> makeTypeLayout tL lTypesL n t) =<< typesLE) types
-  typesL <- typesLE
+  typesL <- sequence $ Map.mapWithKey (makeTypeLayout typesL lTypesL) types
   varsL <- makeVarsLayout typesL lTypesL vars
   return $ ContractLayout {
     varsLayout = varsL,
@@ -41,8 +43,8 @@ makeContractLayout contractsL name (ContractDef vars types lTypes _ _) = do
     }      
 
 makeTypeLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> Identifier -> SolidityNewType -> Either LayoutError SolidityTypeLayout
-makeTypesLayout _ _ _ ContractT = return $ ContractTLayout addressBytes
-makeTypesLayout _ _ _ (Enum names)  =
+makeTypeLayout _ _ _ ContractT = return $ ContractTLayout addressBytes
+makeTypeLayout _ _ _ (Enum names)  =
    return $ EnumLayout (ceiling $ logBase (8::Double) $ fromIntegral $ length names)
 makeTypeLayout typesL lTypesL tName (Struct fields) = do
   varsLayout <- makeVarsLayout typesL lTypesL fields

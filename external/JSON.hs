@@ -1,6 +1,8 @@
-{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, RecursiveDo #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module JSON (jsonABI) where
+
+import Control.Monad.Fix
 
 import Data.Aeson hiding (String)
 import qualified Data.Aeson as Aeson (Value(String))
@@ -84,26 +86,26 @@ instance ToJSON ContractABI where
       (nonempty (pair "library") $ toJSON l)
 
 jsonABI :: FileName -> Map FileName SolidityFile -> Either Value Value
-jsonABI fileName files = do
+jsonABI fileName files = mdo
   files' <- first convertImportError $ fixAllPaths files
   filesDef <- first convertDefnError $ makeFilesDef files'
-  let
-    results = Map.mapWithKey (doFileABI files') filesDef
-    doFileABI filesM fName fileDef = filesABI fName results (fileImports $ getFile fName filesM) fileDef
-      where getFile name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in files'") name
+  let doFileABI filesM fName = filesABI fName results $ fileImports $ getFile fName filesM
+  results <- sequence $ Map.mapWithKey (doFileABI files') filesDef
+  return $ toJSON $ getResult fileName results
+
+  where
+    getFile name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in files'") name
     getResult name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in results") name
-  result <- getResult fileName results
-  return $ toJSON result
 
 filesABI :: FileName ->
-            Map FileName (Either Value (Map ContractName ContractABI)) ->
+            Map FileName (Map ContractName ContractABI) ->
             [(FileName, ImportAs)] -> SolidityContractsDef ->
             Either Value (Map ContractName ContractABI)
-filesABI fileName fileABIEs imports fileDef = do
-  importsABI <- first convertImportError . (\f -> getImportDefs fileName f imports) =<< sequence fileABIEs 
+filesABI fileName fileABIs imports fileDef = mdo
+  importsABI <- first convertImportError $ getImportDefs fileName fileABIs imports
   fileLayout <- first convertLayoutError $ makeContractsLayout fileDef
-  let fileABI = sequence $ Map.mapWithKey (\k v -> (\f -> contractABI f fileLayout k v) =<< fileABI) fileDef
-  Map.union importsABI <$> fileABI
+  fileABI <- sequence $ Map.mapWithKey (contractABI fileABI fileLayout) fileDef
+  return $ importsABI `Map.union` fileABI
 
 contractABI :: Map ContractName ContractABI -> SolidityFileLayout -> ContractName -> SolidityContractDef -> Either Value ContractABI
 contractABI fABI fL name (ContractDef objs types lTypes _ isL) = do
@@ -253,6 +255,10 @@ nonempty f st@(Aeson.String s) =
   if Text.null s
   then []
   else [f st]
+nonempty f bl@(Bool b) =
+  if b
+  then [f bl]
+  else []
 nonempty _ Null = []
 nonempty f x = [f x]
 

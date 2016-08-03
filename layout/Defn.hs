@@ -1,4 +1,7 @@
+{-# LANGUAGE RecursiveDo #-}
 module Defn (makeFilesDef, DefnError(..)) where
+
+import Control.Monad.Fix
 
 import Data.Bifunctor
 import Data.Function
@@ -28,13 +31,11 @@ instance Monoid SolidityContractDef where
   mempty = ContractDef [] Map.empty [] [] False
 
 makeFilesDef :: Map FileName SolidityFile -> Either DefnError (Map FileName SolidityContractsDef)
-makeFilesDef files = do
+makeFilesDef files = mdo
   first DefnImportError $ validateImports files
-  let
-    resultPairs = sequence $ Map.mapWithKey doContractsDef files
-    resultTrans = Map.map snd <$> resultPairs
-    doContractsDef fn sf = (\fds -> makeLinearizedContracts fds fn sf) =<< resultTrans
-  Map.map fst <$> resultPairs
+  let doContractsDef = makeLinearizedContracts $ Map.map snd resultPairs
+  resultPairs <- sequence $ Map.mapWithKey doContractsDef files
+  return $ Map.map fst resultPairs
 
 makeLinearizedContracts :: Map FileName SolidityContractsDef ->
                           FileName ->
@@ -42,23 +43,19 @@ makeLinearizedContracts :: Map FileName SolidityContractsDef ->
                           Either DefnError (SolidityContractsDef, SolidityContractsDef)
 makeLinearizedContracts fileDefs fileName (SolidityFile contracts imports) = do
   importDefs <- first DefnImportError $ getImportDefs fileName fileDefs imports
-  (contractsDef, contractsDefTrans) <- makeContractsDef importDefs contracts
+  contractsDef <- makeContractsDef importDefs contracts
   let
-    linearizedContracts = c3Linearized contractsDef importDefs
-    contractTypes = makeTypesDef $ map (flip TypeDef ContractT) $ Map.keys contractsDefTrans
+    allContractNames = Map.keys importDefs ++ map contractName contracts
+    contractTypes = makeTypesDef $ map (flip TypeDef ContractT) allContractNames
     addContractTypes contract = contract{typesDef = typesDef contract `Map.union` contractTypes}
-    result = Map.map addContractTypes linearizedContracts
-  return $ (result, result `Map.union` importDefs)
+    result = Map.map addContractTypes $ c3Linearized contractsDef importDefs
+  return (result, result `Map.union` importDefs)
 
-makeContractsDef :: SolidityContractsDef -> [SolidityContract] -> Either DefnError (SolidityContractsDef, SolidityContractsDef)
-makeContractsDef importDefs contracts = do
-  contractDefs <- contractDefsE
-  contractDefsTrans <- contractDefsTransE
-  return (contractDefs, contractDefsTrans)
-  where
-    contractDefsE =
-      Map.fromList <$> mapM (\c -> (\cd -> makeContractDef cd c ) =<< contractDefsTransE) contracts
-    contractDefsTransE = Map.union importDefs <$> contractDefsE
+makeContractsDef :: SolidityContractsDef -> [SolidityContract] -> Either DefnError SolidityContractsDef
+makeContractsDef importDefs contracts = mdo
+  let contractDefsTrans = importDefs `Map.union` contractDefs
+  contractDefs <- Map.fromList <$> mapM (makeContractDef contractDefsTrans) contracts
+  return contractDefs
 
 makeContractDef :: SolidityContractsDef -> SolidityContract -> Either DefnError (ContractName, SolidityContractDef)
 makeContractDef allDefs (Contract name objs types lTypes bases isL) = do
