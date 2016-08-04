@@ -128,21 +128,22 @@ contractABI fABI fL name (ContractDef objs types lTypes _ isL) = runIdentity $ d
   lTypesABI <- return $ libTypesABI fABI lTypes
   return $ ContractABI {
       contractVarsABI = varsABI (varsLayout contractLayout) objs,
-      contractFuncsABI = funcsABI objs,
-      contractTypesABI = typesABI (typesLayout contractLayout) types,
+      contractFuncsABI = funcsABI typesL objs,
+      contractTypesABI = typesABI typesL types,
       contractLibraryTypesABI = lTypesABI,
       contractConstrABI = constrABI name objs,
       contractLibraryABI = isL
       }
   where
+    typesL = typesLayout contractLayout
     contractLayout = getContract name fL
     getContract cName = Map.findWithDefault (error $ "contract name " ++ show cName ++ " not found in file layout") cName
 
 varsABI :: SolidityVarsLayout -> [SolidityObjDef] -> Value
 varsABI layout' objs = object $ catMaybes $ map (\o -> varABI layout' o) objs
 
-funcsABI :: [SolidityObjDef] -> Value
-funcsABI objs = object $ catMaybes $ map funcABI objs
+funcsABI :: SolidityTypesLayout -> [SolidityObjDef] -> Value
+funcsABI typesL objs = object $ catMaybes $ map (funcABI typesL) objs
               
 typesABI :: SolidityTypesLayout -> SolidityTypesDef -> Map Identifier Value
 typesABI layout' types =
@@ -178,14 +179,14 @@ varABI layout' var = do
       vB = varStartBytes $ getVar (objName var) layout'
   return $ pair name $ object $ pair "atBytes" (toInteger vB) : tABI
 
-funcABI :: SolidityObjDef -> Maybe Pair
-funcABI ObjDef{objName = name, objValueType = TupleValue vals, objArgType = TupleValue args} =
+funcABI :: SolidityTypesLayout -> SolidityObjDef -> Maybe Pair
+funcABI typesL ObjDef{objName = name, objValueType = TupleValue vals, objArgType = TupleValue args} =
   Just $ pair name $ object [
-           pair "selector" $ selector name args vals,
+           pair "selector" $ selector typesL name args vals,
            lpair "args" args,
            lpair "vals" vals
            ]
-funcABI _ = Nothing
+funcABI _ _ = Nothing
 
 typeABI :: SolidityTypeLayout -> Identifier -> SolidityNewType -> Maybe Value
 typeABI (StructLayout fieldsL tB) name (Struct fields') =

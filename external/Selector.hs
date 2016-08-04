@@ -5,6 +5,7 @@ module Selector (selector) where
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
 
+import qualified Data.Map as Map
 import Data.Maybe
 import qualified Data.Text as T
 import Data.Text.Encoding
@@ -14,39 +15,45 @@ import qualified Crypto.Hash.SHA3 as SHA3 (hash)
 import Numeric
 
 import ParserTypes
+import LayoutTypes
 
-selector :: Identifier -> [SolidityObjDef] -> [SolidityObjDef] -> String
-selector name args vals = hash4 $ signature name args vals
+import Debug.Trace
+
+selector :: SolidityTypesLayout -> Identifier -> [SolidityObjDef] -> [SolidityObjDef] -> String
+selector typesL name args vals = hash4 $ signature typesL name args vals
   where
     hash4 bs = concatMap toHex $ BS.unpack $ BS.take 4 $ SHA3.hash 256 bs
     toHex = zeroPad . flip showHex ""
     zeroPad [c] = ['0',c]
     zeroPad x = x
 
-signature :: Identifier -> [SolidityObjDef] -> [SolidityObjDef] -> ByteString
-signature name args _ = encodeUtf8 $ T.pack $ name ++ prettyArgTypes args
+signature :: SolidityTypesLayout -> Identifier -> [SolidityObjDef] -> [SolidityObjDef] -> ByteString
+signature typesL name args _ = encodeUtf8 $ T.pack $ name ++ prettyArgTypes typesL args
 
-prettyArgTypes :: [SolidityObjDef] -> String
-prettyArgTypes args =
+prettyArgTypes :: SolidityTypesLayout -> [SolidityObjDef] -> String
+prettyArgTypes typesL args =
   show $ parens $ hcat $ punctuate (text ",") $
-  catMaybes $ map (fmap pretty . varType) args
+  catMaybes $ map (fmap (pretty typesL) . varType) args
 
 varType :: SolidityObjDef -> Maybe SolidityBasicType
 varType (ObjDef _ (SingleValue t) NoValue _ _ _) = Just t
 varType _ = Nothing
 
-pretty :: SolidityBasicType -> Doc
-pretty Boolean = text "bool"
-pretty Address = text "address"
-pretty (SignedInt s) = text "int" <> natural (s * 8)
-pretty (UnsignedInt s) = text "uint" <> natural (s * 8)
-pretty (FixedBytes s) = text "bytes" <> natural s
-pretty DynamicBytes = text "bytes"
-pretty String = text "string"
-pretty (FixedArray t l) = (pretty t) <> text "[" <> natural l <> text "]"
-pretty (DynamicArray t) = (pretty t) <> text "[]"
-pretty (Mapping d c) =
-  text "mapping" <+> (parens $ pretty d <+> text "=>" <+> pretty c)
-pretty (Typedef name _) = text name
+pretty :: SolidityTypesLayout -> SolidityBasicType -> Doc
+pretty _ Boolean = text "bool"
+pretty _ Address = text "address"
+pretty _ (SignedInt s) = text "int" <> natural (s * 8)
+pretty _ (UnsignedInt s) = text "uint" <> natural (s * 8)
+pretty _ (FixedBytes s) = text "bytes" <> natural s
+pretty _ DynamicBytes = text "bytes"
+pretty _ String = text "string"
+pretty typesL (FixedArray t l) = (pretty typesL t) <> text "[" <> natural l <> text "]"
+pretty typesL (DynamicArray t) = (pretty typesL t) <> text "[]"
+pretty typesL (Mapping d c) =
+  text "mapping" <+> (parens $ pretty typesL d <+> text "=>" <+> pretty typesL c)
+pretty typesL (Typedef name _) = 
+  case typesL Map.! name of
+    EnumLayout s -> pretty typesL (UnsignedInt s)
+    _ -> text name
 
 natural = integer . toInteger

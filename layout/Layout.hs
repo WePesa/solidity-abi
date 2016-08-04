@@ -53,7 +53,7 @@ makeTypesLayout typesL lTypesL types = Map.mapWithKey (makeTypeLayout typesL lTy
 makeTypeLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> Identifier -> SolidityNewType -> SolidityTypeLayout
 makeTypeLayout _ _ _ ContractT = ContractTLayout addressBytes
 makeTypeLayout _ _ _ (Enum names)  =
-   EnumLayout (ceiling $ logBase (8::Double) $ fromIntegral $ length names)
+   EnumLayout (ceiling $ logBase (256::Double) $ fromIntegral $ length names)
 makeTypeLayout typesL lTypesL tName (Struct fields) = runIdentity $ do
   varsLayout <- return $ makeVarsLayout typesL lTypesL fields
   let getObj name = Map.findWithDefault (Left $ MissingField tName name) name
