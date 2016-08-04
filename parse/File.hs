@@ -17,6 +17,7 @@ solidityFile :: SolidityParser SolidityFile
 solidityFile = do
   whiteSpace
   toplevel <- many $ do
+    setState emptyContract
     let eitherImport = Right <$> solidityImport
         eitherContract = Left <$> (solidityContract >> getState)
     eitherImport <|> eitherContract

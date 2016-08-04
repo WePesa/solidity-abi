@@ -51,7 +51,7 @@ getLibraryLayouts :: ContractName ->
 getLibraryLayouts name contractsL libImports = 
   first (convertQualifyError name) $ getQualifiedNames qAs allLibs 
   where
-    qAs = map (second $ QualifySome . map (\a -> (a, a))) libImports
+    qAs = map (second $ QualifySome . map (\a -> (a, a))) $ nub libImports
     allLibs = Map.map typesLayout contractsL
 
 validateLibraries :: SolidityContractsDef -> Either LibraryError ()

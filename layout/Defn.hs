@@ -78,7 +78,7 @@ makeContractDef allDefs (Contract name objs types lTypes bases isL) = runIdentit
 
   where
     librariesM = map collect $ List.groupBy ((==) `on` fst) lTypes
-    collect pairs = (fst $ head pairs, map snd pairs)
+    collect pairs = (fst $ head pairs, List.nub $ map snd pairs)
     getContractDef (bname, _) = do
       baseDef <- Map.findWithDefault (Left $ MissingBase name bname) bname $ Map.map Right allDefs
       return (bname, baseDef)
