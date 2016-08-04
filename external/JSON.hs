@@ -128,22 +128,23 @@ contractABI fABI fL name (ContractDef objs types lTypes _ isL) = runIdentity $ d
   lTypesABI <- return $ libTypesABI fABI lTypes
   return $ ContractABI {
       contractVarsABI = varsABI (varsLayout contractLayout) objs,
-      contractFuncsABI = funcsABI typesL objs,
+      contractFuncsABI = funcsABI typesL allTypesL objs,
       contractTypesABI = typesABI typesL types,
       contractLibraryTypesABI = lTypesABI,
       contractConstrABI = constrABI name objs,
       contractLibraryABI = isL
       }
   where
-    typesL = typesLayout contractLayout
+    typesL = getContract name allTypesL
+    allTypesL = Map.map typesLayout fL
     contractLayout = getContract name fL
     getContract cName = Map.findWithDefault (error $ "contract name " ++ show cName ++ " not found in file layout") cName
 
 varsABI :: SolidityVarsLayout -> [SolidityObjDef] -> Value
 varsABI layout' objs = object $ catMaybes $ map (\o -> varABI layout' o) objs
 
-funcsABI :: SolidityTypesLayout -> [SolidityObjDef] -> Value
-funcsABI typesL objs = object $ catMaybes $ map (funcABI typesL) objs
+funcsABI :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> [SolidityObjDef] -> Value
+funcsABI typesL allTypesL objs = object $ catMaybes $ map (funcABI typesL allTypesL) objs
               
 typesABI :: SolidityTypesLayout -> SolidityTypesDef -> Map Identifier Value
 typesABI layout' types =
@@ -151,10 +152,10 @@ typesABI layout' types =
   where getType name = Map.findWithDefault (error $ "contract name " ++ show name ++ " not found in layout'") name
 
 libTypesABI :: Map ContractName ContractABI -> [(ContractName, [Identifier])] -> (Map ContractName (Map Identifier Value))
-libTypesABI filesABI lTypes = either (error "Library import error") id $ first convertQualifyError $ getQualifiedNames qAs typesABI
+libTypesABI fileABI lTypes = either (error "Library import error") id $ first convertQualifyError $ getQualifiedNames qAs typesABI
   where
     qAs = map (second $ QualifySome . (map $ \x -> (x,x))) lTypes
-    typesABI = Map.map contractTypesABI filesABI
+    typesABI = Map.map contractTypesABI fileABI
 
 constrABI :: Identifier -> [SolidityObjDef] -> Value
 constrABI name objs = object $ maybe [] listABI argsM
@@ -179,14 +180,14 @@ varABI layout' var = do
       vB = varStartBytes $ getVar (objName var) layout'
   return $ pair name $ object $ pair "atBytes" (toInteger vB) : tABI
 
-funcABI :: SolidityTypesLayout -> SolidityObjDef -> Maybe Pair
-funcABI typesL ObjDef{objName = name, objValueType = TupleValue vals, objArgType = TupleValue args} =
+funcABI :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> SolidityObjDef -> Maybe Pair
+funcABI typesL allTypesL ObjDef{objName = name, objValueType = TupleValue vals, objArgType = TupleValue args} =
   Just $ pair name $ object [
-           pair "selector" $ selector typesL name args vals,
+           pair "selector" $ selector typesL allTypesL name args vals,
            lpair "args" args,
            lpair "vals" vals
            ]
-funcABI _ _ = Nothing
+funcABI _ _ _ = Nothing
 
 typeABI :: SolidityTypeLayout -> Identifier -> SolidityNewType -> Maybe Value
 typeABI (StructLayout fieldsL tB) name (Struct fields') =
