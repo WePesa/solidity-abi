@@ -1,3 +1,3 @@
-module Blockchain.Ethereum.Solidity.Layout (makeContractsLayout) where
+module Blockchain.Ethereum.Solidity.Layout (makeFileLayout) where
 
 import Layout

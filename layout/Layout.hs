@@ -1,6 +1,6 @@
 {-# LANGUAGE RecursiveDo #-}
 module Layout (
-  makeContractsLayout,
+  makeFileLayout,
   SolidityFileLayout, SolidityContractsLayout,
   SolidityTypesLayout, SolidityVarsLayout,
   SolidityContractLayout(..), SolidityTypeLayout(..),
@@ -25,22 +25,28 @@ data LayoutError =
   MissingField Identifier Identifier |
   UnknownType Identifier (Maybe ContractName)
 
-makeContractsLayout :: SolidityContractsDef -> Either LayoutError SolidityContractsLayout
-makeContractsLayout contracts = mdo
+makeFileLayout :: SolidityContractsDef -> Either LayoutError SolidityContractsLayout
+makeFileLayout contracts = mdo
   first LayoutLibraryError $ validateLibraries contracts
-  contractsL <- sequence $ Map.mapWithKey (makeContractLayout contractsL) contracts
+  contractsL <- makeContractsLayout contractsL contracts
   return contractsL
+
+makeContractsLayout :: SolidityContractsLayout -> SolidityContractsDef -> Either LayoutError SolidityContractsLayout
+makeContractsLayout contractsL contracts = sequence $ Map.mapWithKey (makeContractLayout contractsL) contracts
 
 makeContractLayout :: SolidityContractsLayout -> ContractName -> SolidityContractDef
                       -> Either LayoutError SolidityContractLayout
 makeContractLayout contractsL name (ContractDef vars types lTypes _ _) = mdo
   lTypesL <- first LayoutLibraryError $ getLibraryLayouts name contractsL lTypes
-  typesL <- sequence $ Map.mapWithKey (makeTypeLayout typesL lTypesL) types
+  typesL <- makeTypesLayout typesL lTypesL types
   varsL <- makeVarsLayout typesL lTypesL vars
   return $ ContractLayout {
     varsLayout = varsL,
     typesLayout = typesL
     }      
+
+makeTypesLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> SolidityTypesDef -> Either LayoutError SolidityTypesLayout
+makeTypesLayout typesL lTypesL types = sequence $ Map.mapWithKey (makeTypeLayout typesL lTypesL) types
 
 makeTypeLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> Identifier -> SolidityNewType -> Either LayoutError SolidityTypeLayout
 makeTypeLayout _ _ _ ContractT = return $ ContractTLayout addressBytes

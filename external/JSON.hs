@@ -89,23 +89,36 @@ jsonABI :: FileName -> Map FileName SolidityFile -> Either Value Value
 jsonABI fileName files = mdo
   files' <- first convertImportError $ fixAllPaths files
   filesDef <- first convertDefnError $ makeFilesDef files'
-  let doFileABI filesM fName = filesABI fName results $ fileImports $ getFile fName filesM
-  results <- sequence $ Map.mapWithKey (doFileABI files') filesDef
+  results <- filesABI results filesDef files'
   return $ toJSON $ getResult fileName results
 
   where
-    getFile name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in files'") name
     getResult name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in results") name
 
-filesABI :: FileName ->
-            Map FileName (Map ContractName ContractABI) ->
-            [(FileName, ImportAs)] -> SolidityContractsDef ->
-            Either Value (Map ContractName ContractABI)
-filesABI fileName fileABIs imports fileDef = mdo
+filesABI :: Map FileName (Map ContractName ContractABI) ->
+            Map FileName SolidityContractsDef ->
+            Map FileName SolidityFile ->
+            Either Value (Map FileName (Map ContractName ContractABI))
+filesABI fileABIs filesDef solFiles = sequence $ Map.mapWithKey (doFileABI solFiles) filesDef
+  where
+    doFileABI filesM fName = fileABI fName fileABIs $ fileImports $ getFile fName filesM
+    getFile name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in files'") name
+
+fileABI :: FileName ->
+           Map FileName (Map ContractName ContractABI) ->
+           [(FileName, ImportAs)] -> SolidityContractsDef ->
+           Either Value (Map ContractName ContractABI)
+fileABI fileName fileABIs imports fileDef = mdo
   importsABI <- first convertImportError $ getImportDefs fileName fileABIs imports
-  fileLayout <- first convertLayoutError $ makeContractsLayout fileDef
-  fileABI <- sequence $ Map.mapWithKey (contractABI fileABI fileLayout) fileDef
+  fileLayout <- first convertLayoutError $ makeFileLayout fileDef
+  fileABI <- contractsABI fileABI fileLayout fileDef
   return $ importsABI `Map.union` fileABI
+
+contractsABI :: Map ContractName ContractABI ->
+                SolidityFileLayout ->
+                SolidityContractsDef ->
+                Either Value (Map ContractName ContractABI)
+contractsABI fileABI fileLayout fileDef = sequence $ Map.mapWithKey (contractABI fileABI fileLayout) fileDef
 
 contractABI :: Map ContractName ContractABI -> SolidityFileLayout -> ContractName -> SolidityContractDef -> Either Value ContractABI
 contractABI fABI fL name (ContractDef objs types lTypes _ isL) = do

@@ -33,9 +33,12 @@ instance Monoid SolidityContractDef where
 makeFilesDef :: Map FileName SolidityFile -> Either DefnError (Map FileName SolidityContractsDef)
 makeFilesDef files = mdo
   first DefnImportError $ validateImports files
-  let doContractsDef = makeLinearizedContracts $ Map.map snd resultPairs
-  resultPairs <- sequence $ Map.mapWithKey doContractsDef files
+  resultPairs <- makeLinearizedFiles (Map.map snd resultPairs) files
   return $ Map.map fst resultPairs
+
+makeLinearizedFiles :: Map FileName SolidityContractsDef -> Map FileName SolidityFile ->
+                       Either DefnError (Map FileName (SolidityContractsDef, SolidityContractsDef))
+makeLinearizedFiles filesDef files = sequence $ Map.mapWithKey (makeLinearizedContracts filesDef) files
 
 makeLinearizedContracts :: Map FileName SolidityContractsDef ->
                           FileName ->
@@ -54,8 +57,11 @@ makeLinearizedContracts fileDefs fileName (SolidityFile contracts imports) = do
 makeContractsDef :: SolidityContractsDef -> [SolidityContract] -> Either DefnError SolidityContractsDef
 makeContractsDef importDefs contracts = mdo
   let contractDefsTrans = importDefs `Map.union` contractDefs
-  contractDefs <- Map.fromList <$> mapM (makeContractDef contractDefsTrans) contracts
+  contractDefs <- Map.fromList <$> makeContractsAssoc contractDefsTrans contracts
   return contractDefs
+
+makeContractsAssoc :: SolidityContractsDef -> [SolidityContract] -> Either DefnError [(ContractName, SolidityContractDef)]
+makeContractsAssoc allDefs contracts = mapM (makeContractDef allDefs) contracts
 
 makeContractDef :: SolidityContractsDef -> SolidityContract -> Either DefnError (ContractName, SolidityContractDef)
 makeContractDef allDefs (Contract name objs types lTypes bases isL) = do
