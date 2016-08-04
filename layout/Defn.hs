@@ -3,6 +3,8 @@ module Defn (makeFilesDef, DefnError(..)) where
 
 import Control.Monad.Fix
 
+import Data.Functor.Identity
+
 import Data.Bifunctor
 import Data.Function
 import qualified Data.List as List
@@ -30,23 +32,23 @@ instance Monoid SolidityContractDef where
       }
   mempty = ContractDef [] Map.empty [] [] False
 
-makeFilesDef :: Map FileName SolidityFile -> Either DefnError (Map FileName SolidityContractsDef)
-makeFilesDef files = mdo
-  first DefnImportError $ validateImports files
-  resultPairs <- makeLinearizedFiles (Map.map snd resultPairs) files
+makeFilesDef :: Map FileName SolidityFile -> Map FileName SolidityContractsDef
+makeFilesDef files = runIdentity $ mdo
+  return $ either (error "Import validation error") id $ first DefnImportError $ validateImports files
+  resultPairs <- return $ makeLinearizedFiles (Map.map snd resultPairs) files
   return $ Map.map fst resultPairs
 
 makeLinearizedFiles :: Map FileName SolidityContractsDef -> Map FileName SolidityFile ->
-                       Either DefnError (Map FileName (SolidityContractsDef, SolidityContractsDef))
-makeLinearizedFiles filesDef files = sequence $ Map.mapWithKey (makeLinearizedContracts filesDef) files
+                       Map FileName (SolidityContractsDef, SolidityContractsDef)
+makeLinearizedFiles filesDef files = Map.mapWithKey (makeLinearizedContracts filesDef) files
 
 makeLinearizedContracts :: Map FileName SolidityContractsDef ->
-                          FileName ->
-                          SolidityFile -> 
-                          Either DefnError (SolidityContractsDef, SolidityContractsDef)
-makeLinearizedContracts fileDefs fileName (SolidityFile contracts imports) = do
-  importDefs <- first DefnImportError $ getImportDefs fileName fileDefs imports
-  contractsDef <- makeContractsDef importDefs contracts
+                           FileName ->
+                           SolidityFile -> 
+                           (SolidityContractsDef, SolidityContractsDef)
+makeLinearizedContracts fileDefs fileName (SolidityFile contracts imports) = runIdentity $ do
+  importDefs <- return $ either (error "Import error") id $ getImportDefs fileName fileDefs imports
+  contractsDef <- return $ makeContractsDef importDefs contracts
   let
     allContractNames = Map.keys importDefs ++ map contractName contracts
     contractTypes = makeTypesDef $ map (flip TypeDef ContractT) allContractNames
@@ -54,18 +56,18 @@ makeLinearizedContracts fileDefs fileName (SolidityFile contracts imports) = do
     result = Map.map addContractTypes $ c3Linearized contractsDef importDefs
   return (result, result `Map.union` importDefs)
 
-makeContractsDef :: SolidityContractsDef -> [SolidityContract] -> Either DefnError SolidityContractsDef
-makeContractsDef importDefs contracts = mdo
+makeContractsDef :: SolidityContractsDef -> [SolidityContract] -> SolidityContractsDef
+makeContractsDef importDefs contracts = runIdentity $ mdo
   let contractDefsTrans = importDefs `Map.union` contractDefs
-  contractDefs <- Map.fromList <$> makeContractsAssoc contractDefsTrans contracts
+  contractDefs <- return $ Map.fromList $ makeContractsAssoc contractDefsTrans contracts
   return contractDefs
 
-makeContractsAssoc :: SolidityContractsDef -> [SolidityContract] -> Either DefnError [(ContractName, SolidityContractDef)]
-makeContractsAssoc allDefs contracts = mapM (makeContractDef allDefs) contracts
+makeContractsAssoc :: SolidityContractsDef -> [SolidityContract] -> [(ContractName, SolidityContractDef)]
+makeContractsAssoc allDefs contracts = map (makeContractDef allDefs) contracts
 
-makeContractDef :: SolidityContractsDef -> SolidityContract -> Either DefnError (ContractName, SolidityContractDef)
-makeContractDef allDefs (Contract name objs types lTypes bases isL) = do
-  baseDefs <- mapM getContractDef bases
+makeContractDef :: SolidityContractsDef -> SolidityContract -> (ContractName, SolidityContractDef)
+makeContractDef allDefs (Contract name objs types lTypes bases isL) = runIdentity $ do
+  baseDefs <- return $ either (error $ "Missing base error") id $ mapM getContractDef bases
   return $ (name, ContractDef {
     objsDef = objs,
     typesDef = makeTypesDef types,

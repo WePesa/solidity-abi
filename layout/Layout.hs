@@ -12,6 +12,8 @@ import qualified Data.Map as Map
 
 import Control.Monad.Fix
 
+import Data.Functor.Identity
+
 import Data.Bifunctor
 import Data.Maybe
 
@@ -25,55 +27,55 @@ data LayoutError =
   MissingField Identifier Identifier |
   UnknownType Identifier (Maybe ContractName)
 
-makeFileLayout :: SolidityContractsDef -> Either LayoutError SolidityContractsLayout
-makeFileLayout contracts = mdo
-  first LayoutLibraryError $ validateLibraries contracts
-  contractsL <- makeContractsLayout contractsL contracts
+makeFileLayout :: SolidityContractsDef -> SolidityContractsLayout
+makeFileLayout contracts = runIdentity $ mdo
+  return $ either (error "Library layout error") id $ first LayoutLibraryError $ validateLibraries contracts
+  contractsL <- return $ makeContractsLayout contractsL contracts
   return contractsL
 
-makeContractsLayout :: SolidityContractsLayout -> SolidityContractsDef -> Either LayoutError SolidityContractsLayout
-makeContractsLayout contractsL contracts = sequence $ Map.mapWithKey (makeContractLayout contractsL) contracts
+makeContractsLayout :: SolidityContractsLayout -> SolidityContractsDef -> SolidityContractsLayout
+makeContractsLayout contractsL contracts = Map.mapWithKey (makeContractLayout contractsL) contracts
 
 makeContractLayout :: SolidityContractsLayout -> ContractName -> SolidityContractDef
-                      -> Either LayoutError SolidityContractLayout
-makeContractLayout contractsL name (ContractDef vars types lTypes _ _) = mdo
-  lTypesL <- first LayoutLibraryError $ getLibraryLayouts name contractsL lTypes
-  typesL <- makeTypesLayout typesL lTypesL types
-  varsL <- makeVarsLayout typesL lTypesL vars
+                      -> SolidityContractLayout
+makeContractLayout contractsL name (ContractDef vars types lTypes _ _) = runIdentity $ mdo
+  lTypesL <- return $ error ("Library layout error") id $ first LayoutLibraryError $ getLibraryLayouts name contractsL lTypes
+  typesL <- return $ makeTypesLayout typesL lTypesL types
+  varsL <- return $ makeVarsLayout typesL lTypesL vars
   return $ ContractLayout {
     varsLayout = varsL,
     typesLayout = typesL
     }      
 
-makeTypesLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> SolidityTypesDef -> Either LayoutError SolidityTypesLayout
-makeTypesLayout typesL lTypesL types = sequence $ Map.mapWithKey (makeTypeLayout typesL lTypesL) types
+makeTypesLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> SolidityTypesDef -> SolidityTypesLayout
+makeTypesLayout typesL lTypesL types = Map.mapWithKey (makeTypeLayout typesL lTypesL) types
 
-makeTypeLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> Identifier -> SolidityNewType -> Either LayoutError SolidityTypeLayout
-makeTypeLayout _ _ _ ContractT = return $ ContractTLayout addressBytes
+makeTypeLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> Identifier -> SolidityNewType -> SolidityTypeLayout
+makeTypeLayout _ _ _ ContractT = ContractTLayout addressBytes
 makeTypeLayout _ _ _ (Enum names)  =
-   return $ EnumLayout (ceiling $ logBase (8::Double) $ fromIntegral $ length names)
-makeTypeLayout typesL lTypesL tName (Struct fields) = do
-  varsLayout <- makeVarsLayout typesL lTypesL fields
+   EnumLayout (ceiling $ logBase (8::Double) $ fromIntegral $ length names)
+makeTypeLayout typesL lTypesL tName (Struct fields) = runIdentity $ do
+  varsLayout <- return $ makeVarsLayout typesL lTypesL fields
   let getObj name = Map.findWithDefault (Left $ MissingField tName name) name
-  lastEnd <- varEndBytes <$> (getObj (objName $ last fields) $ Map.map Right varsLayout)
+  lastEnd <- return $ either (error "Missing field error") id $ varEndBytes <$> (getObj (objName $ last fields) $ Map.map Right varsLayout)
   let usedBytes = nextLayoutStart lastEnd keyBytes        
   return $ StructLayout varsLayout usedBytes
 
 makeVarsLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> [SolidityObjDef] ->
-                  Either LayoutError SolidityVarsLayout
-makeVarsLayout typesL lTypesL objs = do
-  varsLf <- catMaybes <$> mapM (makeVarLayout typesL lTypesL) objs
+                  SolidityVarsLayout
+makeVarsLayout typesL lTypesL objs = runIdentity $ do
+  varsLf <- return $ catMaybes $ map (makeVarLayout typesL lTypesL) objs
   let
     varOffEnds = 0:map ((+1) . varEndBytes . snd) varsL
     varsL = zipWith ($) varsLf varOffEnds
   return $ Map.fromList varsL
 
 makeVarLayout :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> SolidityObjDef ->
-                 Either LayoutError (Maybe (StorageBytes -> (Identifier, SolidityVarLayout)))
+                 (Maybe (StorageBytes -> (Identifier, SolidityVarLayout)))
 makeVarLayout typesL lTypesL
               ObjDef{objName = name, objValueType = SingleValue t,
-                     objArgType = NoValue, objStorage= StorageStorage} = do
-  tUsed <- usedBytes typesL lTypesL t
+                     objArgType = NoValue, objStorage= StorageStorage} = runIdentity $ do
+  tUsed <- return $ usedBytes typesL lTypesL t
   return $ Just $ \lastOffEnd ->
     let startBytes = nextLayoutStart lastOffEnd tUsed
     in (name,
@@ -82,11 +84,11 @@ makeVarLayout typesL lTypesL
         varEndBytes = startBytes + tUsed - 1
         }
       )
-makeVarLayout _ _ _ = return Nothing
+makeVarLayout _ _ _ = Nothing
 
 usedBytes :: SolidityTypesLayout -> IdentT SolidityTypesLayout -> SolidityBasicType ->
-             Either LayoutError StorageBytes
-usedBytes typesL lTypesL t = case t of
+             StorageBytes
+usedBytes typesL lTypesL t = runIdentity $ case t of
   Boolean -> return 1
   Address -> return addressBytes
   SignedInt b -> return b
@@ -95,7 +97,7 @@ usedBytes typesL lTypesL t = case t of
   DynamicBytes -> return keyBytes
   String -> return keyBytes
   FixedArray typ l -> do 
-    elemSize <- usedBytes typesL lTypesL typ
+    elemSize <- return $ usedBytes typesL lTypesL typ
     let (newEach, numKeys) =
           if elemSize <= 32
           then (32 `quot` elemSize,
@@ -104,7 +106,7 @@ usedBytes typesL lTypesL t = case t of
     return $ keyBytes * numKeys
   DynamicArray _ -> return keyBytes
   Mapping _ _ -> return $ keyBytes
-  Typedef name libM -> typeUsedBytes <$> (getType name $ maybe typesL (lTypesL Map.!) libM)
+  Typedef name libM -> return $ either (error "Unknown type error") id $ typeUsedBytes <$> (getType name $ maybe typesL (lTypesL Map.!) libM)
     where getType name m = Map.findWithDefault (Left $ UnknownType name libM) name $ Map.map Right m
 
 nextLayoutStart :: StorageBytes -> StorageBytes -> StorageBytes

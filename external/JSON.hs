@@ -4,6 +4,8 @@ module JSON (jsonABI) where
 
 import Control.Monad.Fix
 
+import Data.Functor.Identity
+
 import Data.Aeson hiding (String)
 import qualified Data.Aeson as Aeson (Value(String))
 import Data.Aeson.Types (Pair)
@@ -87,9 +89,10 @@ instance ToJSON ContractABI where
 
 jsonABI :: FileName -> Map FileName SolidityFile -> Either Value Value
 jsonABI fileName files = mdo
-  files' <- first convertImportError $ fixAllPaths files
-  filesDef <- first convertDefnError $ makeFilesDef files'
-  results <- filesABI results filesDef files'
+  files' <- return $ either (error "Import path error") id $ first convertImportError $ fixAllPaths files
+  first convertImportError $ validateImports files'
+  filesDef <- return $ makeFilesDef files'
+  results <- return $ filesABI results filesDef files'
   return $ toJSON $ getResult fileName results
 
   where
@@ -98,8 +101,8 @@ jsonABI fileName files = mdo
 filesABI :: Map FileName (Map ContractName ContractABI) ->
             Map FileName SolidityContractsDef ->
             Map FileName SolidityFile ->
-            Either Value (Map FileName (Map ContractName ContractABI))
-filesABI fileABIs filesDef solFiles = sequence $ Map.mapWithKey (doFileABI solFiles) filesDef
+            (Map FileName (Map ContractName ContractABI))
+filesABI fileABIs filesDef solFiles = Map.mapWithKey (doFileABI solFiles) filesDef
   where
     doFileABI filesM fName = fileABI fName fileABIs $ fileImports $ getFile fName filesM
     getFile name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in files'") name
@@ -107,22 +110,22 @@ filesABI fileABIs filesDef solFiles = sequence $ Map.mapWithKey (doFileABI solFi
 fileABI :: FileName ->
            Map FileName (Map ContractName ContractABI) ->
            [(FileName, ImportAs)] -> SolidityContractsDef ->
-           Either Value (Map ContractName ContractABI)
-fileABI fileName fileABIs imports fileDef = mdo
-  importsABI <- first convertImportError $ getImportDefs fileName fileABIs imports
-  fileLayout <- first convertLayoutError $ makeFileLayout fileDef
-  fileABI <- contractsABI fileABI fileLayout fileDef
+           (Map ContractName ContractABI)
+fileABI fileName fileABIs imports fileDef = runIdentity $ mdo
+  importsABI <- return $ either (error "Import error") id $ getImportDefs fileName fileABIs imports
+  fileLayout <- return $ makeFileLayout fileDef
+  fileABI <- return $ contractsABI fileABI fileLayout fileDef
   return $ importsABI `Map.union` fileABI
 
 contractsABI :: Map ContractName ContractABI ->
                 SolidityFileLayout ->
                 SolidityContractsDef ->
-                Either Value (Map ContractName ContractABI)
-contractsABI fileABI fileLayout fileDef = sequence $ Map.mapWithKey (contractABI fileABI fileLayout) fileDef
+                (Map ContractName ContractABI)
+contractsABI fileABI fileLayout fileDef = Map.mapWithKey (contractABI fileABI fileLayout) fileDef
 
-contractABI :: Map ContractName ContractABI -> SolidityFileLayout -> ContractName -> SolidityContractDef -> Either Value ContractABI
-contractABI fABI fL name (ContractDef objs types lTypes _ isL) = do
-  lTypesABI <- libTypesABI fABI lTypes
+contractABI :: Map ContractName ContractABI -> SolidityFileLayout -> ContractName -> SolidityContractDef -> ContractABI
+contractABI fABI fL name (ContractDef objs types lTypes _ isL) = runIdentity $ do
+  lTypesABI <- return $ libTypesABI fABI lTypes
   return $ ContractABI {
       contractVarsABI = varsABI (varsLayout contractLayout) objs,
       contractFuncsABI = funcsABI objs,
@@ -146,8 +149,8 @@ typesABI layout' types =
   Map.mapMaybeWithKey (\k t -> typeABI (getType k layout') k t) types
   where getType name = Map.findWithDefault (error $ "contract name " ++ show name ++ " not found in layout'") name
 
-libTypesABI :: Map ContractName ContractABI -> [(ContractName, [Identifier])] -> Either Value (Map ContractName (Map Identifier Value))
-libTypesABI filesABI lTypes = first convertQualifyError $ getQualifiedNames qAs typesABI
+libTypesABI :: Map ContractName ContractABI -> [(ContractName, [Identifier])] -> (Map ContractName (Map Identifier Value))
+libTypesABI filesABI lTypes = either (error "Library import error") id $ first convertQualifyError $ getQualifiedNames qAs typesABI
   where
     qAs = map (second $ QualifySome . (map $ \x -> (x,x))) lTypes
     typesABI = Map.map contractTypesABI filesABI
