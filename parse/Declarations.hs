@@ -83,7 +83,7 @@ variableDeclaration = do
   semi
   addVar $ maybe vDecl (\vD -> vDecl{varAssignment = vD}) vDefn
 
-simpleVariableDeclaration :: SolidityParser SolidityObjDef
+simpleVariableDeclaration :: SolidityParser SolidityVarDef
 simpleVariableDeclaration = do
   variableType <- simpleTypeExpression
   typeMaker <- variableModifiers
@@ -106,7 +106,7 @@ eventDeclaration = do
   reserved "event"
   name <- identifier
   logs <- tupleDeclaration
-  isAnon <- option False $ (reserved "anonymous" >> True)
+  isAnon <- option False $ reserved "anonymous" >> return True
   semi
   addEvent $ EventDef {
     eventName = name,
@@ -167,7 +167,7 @@ functionModifiers =
       funcArgType = args,
       funcDefn = "",
       funcVisibility = v,
-      funcStorage = case s of {ValueStorage -> True; _ -> False}
+      funcIsConstant = case s of {ValueStorage -> True; _ -> False}
     }) <$?>
     (TupleValue [], returnModifier) <|?>
     (PublicVisible, visibilityModifier) <|?>

@@ -7,7 +7,7 @@ import ParserTypes
 
 type SolidityContractsLayout = Map ContractName SolidityContractLayout
 type SolidityTypesLayout = Map Identifier SolidityTypeLayout
-type SolidiyVarsLayout = Map Identifier SolidityVarLayout
+type SolidityVarsLayout = Map Identifier SolidityVarLayout
 
 data SolidityContractLayout =
   ContractLayout {
@@ -28,6 +28,9 @@ data SolidityTypeLayout =
     typeUsedBytes :: StorageBytes
     } |
   EnumLayout {
+    typeUsedBytes :: StorageBytes
+    } |
+  ContractTLayout {
     typeUsedBytes :: StorageBytes
     }
 

@@ -9,12 +9,15 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.List as List
 import Data.Maybe
+import qualified Data.Set as Set
+import Data.Set (Set)
 import Data.String
 
 import qualified Data.HashMap.Strict as HashMap
 import qualified Data.Vector as Vector
 import qualified Data.Text as Text
 
+import Files
 import Inheritance
 import Layout
 import LayoutTypes
@@ -69,16 +72,16 @@ instance ToJSON ContractABI where
 
 parseToJSON :: FileName -> Map FileName SourceCode -> Either Value Value
 parseToJSON fileName sources = do
-  parsedFiles <- Map.mapWithKey parseSolidity sources
+  parsedFiles <- first (error . show) $ sequence $ Map.mapWithKey parseSolidity sources
   mainFile <- first convertImportError $ doImports fileName parsedFiles
   contracts <- return $ doInheritance mainFile
   layouts <- return $ doLayout contracts
-  let results = Map.intersectWith (contractABI results) layouts contracts
+  let results = Map.intersectionWith (contractABI results layouts) layouts contracts
   return $ toJSON results
 
-contractABI :: Map ContractName ContractABI -> SolidityContractLayout -> SolidityContract ->
-               ContractABI
-contractABI allABI layout contract =
+contractABI :: Map ContractName ContractABI -> SolidityContractsLayout ->
+               SolidityContractLayout -> SolidityContract -> ContractABI
+contractABI allABI allLayouts layout contract =
   ContractABI {
     contractVarsABI = varsABI varsL vars,
     contractFuncsABI = funcsABI typesL allTypesL funcs,
@@ -89,21 +92,24 @@ contractABI allABI layout contract =
     contractLibraryABI = contractIsLibrary contract
     }
   where
-    varsL = varsLayout contractL 
-    typesL = typesLayout contractL 
-    allTypesL = Map.map typesLayout layout
-    contractL = layout Map.! contractName contract
-    lTypes = contractLibraryTypes contract
+    varsL = varsLayout layout 
+    typesL = typesLayout layout 
+    allTypesL = Map.map typesLayout allLayouts
 
     name = contractName contract
-    vars = Map.fromList $ map (\v -> (varName v, v)) $ contractVars contract
-    funcs = contractFuncs contract `Map.delete` name `Map.delete` ""
+    vars = makeVarsMap $ contractVars contract
+    funcs = contractFuncs contract `del` name `del` ""
     events = contractEvents contract
     types = contractTypes contract
     lTypes = contractLibraryTypes contract
 
+    del = flip Map.delete
+
+makeVarsMap :: [SolidityVarDef] -> SolidityVars
+makeVarsMap = Map.fromList . map (\v -> (varName v, v))
+
 varsABI :: SolidityVarsLayout -> SolidityVars -> ValueMap
-varsABI = Map.intersectWith varABI
+varsABI = Map.intersectionWith varABI
 
 funcsABI :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout ->
             SolidityFuncs -> ValueMap
@@ -114,16 +120,14 @@ eventsABI :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout ->
 eventsABI typesL allTypesL events = Map.map (eventABI typesL allTypesL) events
 
 typesABI :: SolidityTypesLayout -> SolidityTypes -> ValueMap
-typesABI = Map.intersectWith typeABI
+typesABI = Map.intersectionWith typeABI
 
 libTypesABI :: Map ContractName ContractABI -> SolidityLibraryTypes -> Map ContractName ValueMap
-libTypesABI = Map.intersectWith libTypeABI
+libTypesABI = Map.intersectionWith libTypeABI
 
 constrABI :: ContractName -> SolidityFuncs -> ValueMap
-constrABI name funcs = tupleABI constrArgs
-  where
-    constrArgs = maybe [] funcArgType constrM
-    constrM = Map.lookup name funcs
+constrABI name funcs = maybe Map.empty (tupleABI . funcArgType) constrM
+  where constrM = Map.lookup name funcs
 
 tupleABI :: SolidityTuple -> ValueMap
 tupleABI (TupleValue vars) = Map.fromList $ zipWith indexObjABI [0 :: Integer ..] vars
@@ -135,24 +139,23 @@ tupleABI (TupleValue vars) = Map.fromList $ zipWith indexObjABI [0 :: Integer ..
 
 varABI :: SolidityVarLayout -> SolidityVarDef -> Value
 varABI varL var = object $ pair "atBytes" startBytes : basicTypeABI (varType var)
-  where startBytes = fromIntegral $ varStartBytes varL
+  where startBytes = toInteger $ varStartBytes varL
 
 funcABI :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> SolidityFuncDef -> Value
-funcABI typesL allTypesL func = object [
-  pair "selector" $ selector typesL allTypesL name args,
-  pair "args" $ tupleABI args,
-  pair "vals" $ tupleABI vals
-  ]
+funcABI typesL allTypesL func = object $
+  [pair "selector" $ selector typesL allTypesL name args] ++
+  (nonempty (pair "args") $ tupleABI args) ++
+  (nonempty (pair "vals") $ tupleABI vals)
   where
     name = funcName func
     args = funcArgType func
     vals = funcValueType func
 
 eventABI :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> SolidityEventDef -> Value
-eventABI typesL allTypesL event = object [pair "topics" $ tupleABI topics] ++ sig
+eventABI typesL allTypesL event = object $ [pair "topics" $ tupleABI topics] ++ sig
   where
     sig = 
-      if eventIsAnonymous
+      if eventIsAnonymous event
       then []
       else [pair "selector" $ selector typesL allTypesL name topics]
     name = eventName event
@@ -163,7 +166,7 @@ typeABI (StructLayout fieldsL tB) TypeDef{typeDecl = (Struct fields)} =
   object [
     pair "type" "Struct",
     pair "bytes" $ toInteger tB,
-    pair "fields" $ varsABI fieldsL fields
+    pair "fields" $ varsABI fieldsL $ makeVarsMap fields
     ]
 typeABI (EnumLayout tB) TypeDef{typeDecl = (Enum names)} =
   object $ [
@@ -175,7 +178,7 @@ typeABI _ _ = error "Broken types layout or missing type definition"
 
 libTypeABI :: ContractABI -> Set Identifier -> ValueMap
 libTypeABI contractABI lTypeNames = Map.fromList $ Set.foldr getTypeABI [] lTypeNames
-  where getTypeABI name = contractTypesABI contractABI Map.! name
+  where getTypeABI name = ((name, contractTypesABI contractABI Map.! name) :)
 
 basicTypeABI :: SolidityBasicType -> [Pair]
 basicTypeABI Boolean = [pair "type" "Bool"]

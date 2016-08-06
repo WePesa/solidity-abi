@@ -25,13 +25,13 @@ addEvent :: SolidityEventDef -> SolidityParser ()
 addEvent o = modifyState $ second $ \c@Contract{contractEvents = os} -> c{contractEvents = Map.insert (eventName o) o os}
 
 addModifier :: SolidityModifierDef -> SolidityParser ()
-addModifier o = modifyState $ second $ \c@Contract{contractModifiers = os} -> c{contractModifiers = Map.insert (modifierName o) o os}
+addModifier o = modifyState $ second $ \c@Contract{contractModifiers = os} -> c{contractModifiers = Map.insert (modName o) o os}
 
 addType :: SolidityTypeDef -> SolidityParser ()
 addType t = modifyState $ second $ \c@Contract{contractTypes = ts} -> c{contractTypes = Map.insert (typeName t) t ts}
 
 addLibraryType :: ContractName -> Identifier -> SolidityParser ()
-addLibraryType n t = modifyState $
+addLibraryType n t = modifyState $ second $
   \c@Contract{contractLibraryTypes = lts} ->
     c{contractLibraryTypes = Map.alter (maybe (Just Set.empty) (Just . Set.insert t)) n lts}
 
@@ -45,10 +45,10 @@ emptyContract :: SolidityContract
 emptyContract = Contract {
   contractName = "",
   contractVars = [],
-  contractFuncs = [],
-  contractEvents = [],
-  contractModifiers = [],
-  contractTypes = [],
+  contractFuncs = Map.empty,
+  contractEvents = Map.empty,
+  contractModifiers = Map.empty,
+  contractTypes = Map.empty,
   contractLibraryTypes = Map.empty,
   contractInherits = [],
   contractIsLibrary = False
@@ -67,13 +67,13 @@ data ImportAs =
    
 data SolidityFile = 
   SolidityFile {  
-    fileContracts :: SolidityContracts
+    fileContracts :: SolidityContracts,
     fileImports :: [(FileName, ImportAs)]
     } deriving (Eq)
 
 type SolidityContracts = Map ContractName SolidityContract
 type SolidityTypes = Map Identifier SolidityTypeDef
-type SolidityVars = Map Identifier SolidiyVarDef
+type SolidityVars = Map Identifier SolidityVarDef
 type SolidityFuncs = Map Identifier SolidityFuncDef
 type SolidityEvents = Map Identifier SolidityEventDef
 type SolidityModifiers = Map Identifier SolidityModifierDef
@@ -129,7 +129,7 @@ data SolidityVisibility = PublicVisible | PrivateVisible | InternalVisible | Ext
 
 data SolidityStorage = StorageStorage | MemoryStorage | IndexedStorage | ValueStorage deriving (Eq)
            
-data SolidityTuple = TupleValue [SolidityVarDef] deriving (Eq)
+newtype SolidityTuple = TupleValue [SolidityVarDef] deriving (Eq)
 
 data SolidityTypeDef =
   TypeDef {

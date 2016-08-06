@@ -26,10 +26,7 @@ executable solidity-abi
   default-language:    Haskell2010
 
 library
-  exposed-modules:     Blockchain.Ethereum.Solidity.Layout
-                       Blockchain.Ethereum.Solidity.Parse
-                       Blockchain.Ethereum.Solidity.External.JSON
-                       Blockchain.Ethereum.Solidity.External.Contract
+  exposed-modules:     Blockchain.Ethereum.Solidity.JSON
   other-modules:       JSON
                        Selector
                        Layout
@@ -39,14 +36,13 @@ library
                        File
                        Lexer
                        Parser
-                       DefnTypes
-                       Defn
                        ParserTypes
                        Types
                        DAG
-                       Imports
                        Qualify
-                       Libraries
+                       Inheritance
+                       Files
+                       C3
   build-depends:       base,
                        containers,
                        parsec,
@@ -58,7 +54,8 @@ library
                        semigroups,
                        cryptohash,
                        unordered-containers,
-                       vector
+                       vector,
+                       transformers
   hs-source-dirs:      .
                        algo
                        external

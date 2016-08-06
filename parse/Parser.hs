@@ -2,7 +2,9 @@ module Parser (
   parseSolidity,
   FileName, Identifier, ContractName, SourceCode,
   ImportAs(..), SolidityFile(..),
-  SolidityContract(..), SolidityObjDef(..),
+  SolidityContract(..), SolidityVarDef(..),
+  SolidityFuncDef(..), SolidityEventDef(..),
+  SolidityModifierDef(..), 
   SolidityTypeDef(..), SolidityTuple(..),
   SolidityBasicType(..), SolidityNewType(..),
   SolidityVisibility(..), SolidityStorage(..)

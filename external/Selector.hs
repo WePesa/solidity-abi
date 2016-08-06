@@ -18,7 +18,8 @@ import Numeric
 import ParserTypes
 import LayoutTypes
 
-selector :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> Identifier -> [SolidityObjDef] -> String
+selector :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout ->
+            Identifier -> SolidityTuple -> String
 selector typesL allTypesL name args = hash4 $ signature typesL allTypesL name args 
   where
     hash4 bs = concatMap toHex $ BS.unpack $ BS.take 4 $ SHA3.hash 256 bs
@@ -26,19 +27,19 @@ selector typesL allTypesL name args = hash4 $ signature typesL allTypesL name ar
     zeroPad [c] = ['0',c]
     zeroPad x = x
 
-signature :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> Identifier -> [SolidityObjDef] -> ByteString
-signature typesL allTypesL name args = encodeUtf8 $ T.pack $ name ++ prettyArgTypes typesL allTypesL args
+signature :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout ->
+             Identifier -> SolidityTuple -> ByteString
+signature typesL allTypesL name args =
+  encodeUtf8 $ T.pack $ name ++ prettyArgTypes typesL allTypesL args
 
-prettyArgTypes :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> [SolidityObjDef] -> String
-prettyArgTypes typesL allTypesL args =
+prettyArgTypes :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout ->
+                  SolidityTuple -> String
+prettyArgTypes typesL allTypesL (TupleValue args) =
   show $ parens $ hcat $ punctuate (text ",") $
-  catMaybes $ map (fmap (pretty typesL allTypesL) . varType) args
+  map (pretty typesL allTypesL . varType) args
 
-varType :: SolidityObjDef -> Maybe SolidityBasicType
-varType (ObjDef _ (SingleValue t) NoValue _ _ _) = Just t
-varType _ = Nothing
-
-pretty :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> SolidityBasicType -> Doc
+pretty :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout ->
+          SolidityBasicType -> Doc
 pretty _ _ Boolean = text "bool"
 pretty _ _ Address = text "address"
 pretty _ _ (SignedInt s) = text "int" <> natural (s * 8)

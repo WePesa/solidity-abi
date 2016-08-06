@@ -1,4 +1,7 @@
-module Files (doImports) where
+module Files (
+  doImports,
+  ImportError(..)
+  ) where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -59,7 +62,7 @@ resolveImports resolved files = Map.mapWithKey (resolveImport resolved) files
 resolveImport :: Map FileName SolidityContracts ->
                  FileName -> SolidityFile -> SolidityContracts
 resolveImport resolved name SolidityFile{fileContracts = contracts, fileImports = imports} = 
-  contracts `Map.union` (either (error $ "Import error") id $ getImportDefs resolved imports)
+  contracts `Map.union` (either (error $ "Import error") id $ getImportDefs name resolved imports)
 
 -- In both of these functions, all filenames must be collapsed and relative
 -- to a common base

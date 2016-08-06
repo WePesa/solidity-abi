@@ -24,8 +24,9 @@ doLayout contracts = either (error "Library layout error") id $ do
   let result = Map.mapWithKey (\n c -> runReader (doContractLayout c) (n,result)) contracts
   return result
 
-validateLibraries :: SolidityContracts -> Either DAGError ()
-validateLibraries contractDefs = checkDAG $ Map.map (map fst . libraryTypes) contractDefs
+validateLibraries :: SolidityContracts -> Either (DAGError ContractName) ()
+validateLibraries contractDefs = 
+  checkDAG $ Map.map (Map.keys . contractLibraryTypes) contractDefs
 
 doContractLayout :: SolidityContract -> LayoutReader SolidityContractLayout
 doContractLayout contract = do
@@ -38,15 +39,15 @@ doContractLayout contract = do
     }
 
 doTypesLayout :: SolidityTypes -> LayoutReader SolidityTypesLayout
-doTypesLayout types = sequence $ Map.map doTypeLayout types
+doTypesLayout types = sequence $ Map.map (doTypeLayout . typeDecl) types
 
-doTypeLayout :: SolidityTypeDef -> LayoutReader SolidityTypeLayout
+doTypeLayout :: SolidityNewType -> LayoutReader SolidityTypeLayout
 doTypeLayout (Enum names)  =
   return $ EnumLayout {
     typeUsedBytes = ceiling $ logBase (256::Double) $ fromIntegral $ length names
     }
 doTypeLayout (Struct fields) = do
-  fieldsLayout <- doVarsLayout fields,
+  fieldsLayout <- doVarsLayout fields
   let lastEnd = varEndBytes $ fieldsLayout Map.! varName (last fields)
   return $ StructLayout {
     structFieldsLayout = fieldsLayout,
@@ -54,7 +55,7 @@ doTypeLayout (Struct fields) = do
     }
 
 doVarsLayout :: [SolidityVarDef] -> LayoutReader SolidityVarsLayout
-doVarsLayout contractsL vars = do
+doVarsLayout vars = do
   varsL <- foldr (\v vLs -> makeNextVarL v vLs) (return []) $ filter isStorage vars
   return $ makeVarsMap varsL
   where
@@ -71,7 +72,7 @@ doVarsLayout contractsL vars = do
 
 doVarLayout :: StorageBytes -> SolidityVarDef -> LayoutReader SolidityVarLayout
 doVarLayout lastOffEnd var = do
-  tUsed <- usedBytes contractsL $ varType var
+  tUsed <- usedBytes $ varType var
   let startBytes = nextLayoutStart lastOffEnd tUsed
   return $ VarLayout {
     varStartBytes = startBytes,
@@ -79,7 +80,7 @@ doVarLayout lastOffEnd var = do
     }
 
 usedBytes :: SolidityBasicType -> LayoutReader StorageBytes
-usedBytes contractsL t = case t of
+usedBytes t = case t of
   Boolean -> return 1
   Address -> return addressBytes
   SignedInt b -> return b
@@ -88,34 +89,40 @@ usedBytes contractsL t = case t of
   DynamicBytes -> return keyBytes
   String -> return keyBytes
   FixedArray typ l -> do
-    elemSize <- usedBytes contractsL typ
-    return $ keyBytes * numKeys
-    where
+    elemSize <- usedBytes typ
+    let
       (newEach, numKeys) =
         if elemSize <= 32
         then (32 `quot` elemSize,
               l `quot` newEach + (if l `rem` newEach == 0 then 0 else 1))
         else (1, l * (elemSize `quot` 32)) -- always have rem = 0
+    return $ keyBytes * numKeys
   DynamicArray _ -> return keyBytes
   Mapping _ _ -> return keyBytes
-  Typedef name libM -> typeUsedBytes <$> findTypeDef name libM
+  Typedef name libM -> typeUsedBytes <$> findTypedef name libM
 
-findTypeDef :: Identifier -> Maybe ContractName -> LayoutReader SolidityTypeLayout
-findTypeDef name libM = do
-  (cName, contractsL) <- get
-  return $ either id notFound $ do
-    findOrContinue name contract
-    lib <- maybe (Left notFound) Right libM
-    library <- maybe (Left $ error $ "No such library: " ++ lib) Left $
+findTypedef :: Identifier -> Maybe ContractName -> LayoutReader SolidityTypeLayout
+findTypedef name libM = do
+  (cName, contractsL) <- ask
+  let
+    contractL = contractsL Map.! cName
+    notFound =
+      error $ "Type " ++ name ++ " not a contract nor found in contract " ++ cName ++
+      maybe "" (" nor in library or base contract " ++) libM
+  return $ either id id $ do
+    findOrContinue name contractL
+    if name `elem` Map.keys contractsL
+    then Left $ ContractTLayout addressBytes
+    else Right()
+    lib <- maybe notFound Right libM
+    library <- maybe (error $ "No such library: " ++ lib) Right $
                Map.lookup lib contractsL
-    when (not $ layoutIsLibrary library) $ Left $ error $ "Not a library: " ++ lib
+    when (not $ layoutIsLibrary library) $ error $ "Not a library: " ++ lib
     findOrContinue name library
+    notFound
 
   where
-    findOrContinue n c = maybe (Right ()) Left $ Map.lookup name $ contractTypes c
-    notFound =
-      error $ "Type " ++ name ++ " not found in contract " ++ cName ++
-      maybe "" (" or in library or base contract " ++) libM
+    findOrContinue n c = maybe (Right ()) Left $ Map.lookup name $ typesLayout c
 
 nextLayoutStart :: StorageBytes -> StorageBytes -> StorageBytes
 nextLayoutStart 0 _ = 0
