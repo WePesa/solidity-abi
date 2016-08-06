@@ -18,16 +18,16 @@ import Numeric
 import ParserTypes
 import LayoutTypes
 
-selector :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> Identifier -> [SolidityObjDef] -> [SolidityObjDef] -> String
-selector typesL allTypesL name args vals = hash4 $ signature typesL allTypesL name args vals
+selector :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> Identifier -> [SolidityObjDef] -> String
+selector typesL allTypesL name args = hash4 $ signature typesL allTypesL name args 
   where
     hash4 bs = concatMap toHex $ BS.unpack $ BS.take 4 $ SHA3.hash 256 bs
     toHex = zeroPad . flip showHex ""
     zeroPad [c] = ['0',c]
     zeroPad x = x
 
-signature :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> Identifier -> [SolidityObjDef] -> [SolidityObjDef] -> ByteString
-signature typesL allTypesL name args _ = encodeUtf8 $ T.pack $ name ++ prettyArgTypes typesL allTypesL args
+signature :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> Identifier -> [SolidityObjDef] -> ByteString
+signature typesL allTypesL name args = encodeUtf8 $ T.pack $ name ++ prettyArgTypes typesL allTypesL args
 
 prettyArgTypes :: SolidityTypesLayout -> Map ContractName SolidityTypesLayout -> [SolidityObjDef] -> String
 prettyArgTypes typesL allTypesL args =

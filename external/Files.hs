@@ -1,21 +1,16 @@
-{-# LANGUAGE DeriveFunctor #-}
-module Imports (
-  ImportError(..),
-  getImportDefs,
-  validateImports,
-  fixAllPaths
-  ) where
+module Files (doImports) where
 
-import Data.Bifunctor
 import Data.Map (Map)
 import qualified Data.Map as Map
+
+import Data.Bifunctor
 import Data.Foldable ()
 import Data.Monoid
 import Data.Traversable ()
 import System.FilePath
 
-import DAG
 import ParserTypes
+import DAG
 import Qualify
 
 data ImportError = 
@@ -48,6 +43,23 @@ convertQualifyError :: FileName -> QualifyError FileName ContractName ContractNa
 convertQualifyError m (LocalNameMissing x k) = MissingSymbol m k x
 convertQualifyError m (GlobalNameMissing x) = MissingImport m x
 convertQualifyError m (LocalNameDuplicate x k) = DuplicateSymbol m x k
+
+doImports :: FileName -> Map FileName SolidityFile -> Either ImportError SolidityContracts
+doImports name files = do
+  files' <- fixAllPaths files
+  validateImports files'
+  let resolved = resolveImports resolved files' 
+  return $ Map.findWithDefault (error $ "Missing filename: " ++ name) name resolved
+
+resolveImports :: Map FileName SolidityContracts ->
+                  Map FileName SolidityFile ->
+                  Map FileName SolidityContracts
+resolveImports resolved files = Map.mapWithKey (resolveImport resolved) files
+
+resolveImport :: Map FileName SolidityContracts ->
+                 FileName -> SolidityFile -> SolidityContracts
+resolveImport resolved name SolidityFile{fileContracts = contracts, fileImports = imports} = 
+  contracts `Map.union` (either (error $ "Import error") id $ getImportDefs resolved imports)
 
 -- In both of these functions, all filenames must be collapsed and relative
 -- to a common base

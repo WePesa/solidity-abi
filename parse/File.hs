@@ -1,7 +1,9 @@
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module File (solidityFile) where
 
+import Data.Bifunctor
 import Data.Either
+import Data.Map (fromList)
 
 import Text.Parsec
 import Text.Parsec.Char
@@ -17,12 +19,12 @@ solidityFile :: SolidityParser SolidityFile
 solidityFile = do
   whiteSpace
   toplevel <- many $ do
-    setState emptyContract
+    setState ("", emptyContract)
     let eitherImport = Right <$> solidityImport
         eitherContract = Left <$> (solidityContract >> getState)
     eitherImport <|> eitherContract
   eof
-  return $ uncurry SolidityFile $ partitionEithers toplevel
+  return $ uncurry SolidityFile $ first fromList $ partitionEithers toplevel
  
 solidityImport :: SolidityParser (FileName, ImportAs)
 solidityImport = do

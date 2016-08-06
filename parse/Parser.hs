@@ -13,6 +13,6 @@ import Text.Parsec hiding (parse)
 import File
 import ParserTypes
 
-parseSolidity :: FileName -> String -> Either ParseError SolidityFile
-parseSolidity sName sCode = runParser solidityFile emptyContract sName sCode
+parseSolidity :: FileName -> SourceCode -> Either ParseError SolidityFile
+parseSolidity sName sCode = runParser solidityFile ("", emptyContract) sName sCode
 

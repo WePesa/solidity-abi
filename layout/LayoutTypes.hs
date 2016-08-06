@@ -5,42 +5,31 @@ import Numeric.Natural
 
 import ParserTypes
 
-type IdentT a = Map Identifier a
-
-type SolidityFileLayout = SolidityContractsLayout
-type SolidityContractsLayout = IdentT SolidityContractLayout
-type SolidityVarsLayout = IdentT SolidityVarLayout
-type SolidityTypesLayout = IdentT SolidityTypeLayout
+type SolidityContractsLayout = Map ContractName SolidityContractLayout
+type SolidityTypesLayout = Map Identifier SolidityTypeLayout
+type SolidiyVarsLayout = Map Identifier SolidityVarLayout
 
 data SolidityContractLayout =
   ContractLayout {
-    varsLayout :: SolidityVarsLayout,
-    typesLayout :: SolidityTypesLayout
+    varsLayout :: Map Identifier SolidityVarLayout,
+    typesLayout :: Map Identifier SolidityTypeLayout,
+    layoutIsLibrary :: Bool
     }
-  deriving (Show)
 
 data SolidityVarLayout =
   VarLayout {
     varStartBytes :: StorageBytes,
     varEndBytes :: StorageBytes
     }
-  deriving (Show)
 
 data SolidityTypeLayout =
   StructLayout {
-    structFieldsLayout :: SolidityVarsLayout,
+    structFieldsLayout :: Map Identifier SolidityVarLayout,
     typeUsedBytes :: StorageBytes
     } |
   EnumLayout {
     typeUsedBytes :: StorageBytes
-    } |
-  UsingLayout {
-    typeUsedBytes :: StorageBytes
-    } |
-  ContractTLayout {
-    typeUsedBytes :: StorageBytes
     }
-  deriving (Show)
 
 type StorageKey = Natural
 type StorageBytes = Natural

@@ -81,14 +81,14 @@ variableDeclaration = do
     reservedOp "="
     many $ noneOf ";"
   semi
-  addObj $ maybe vDecl (\vD -> vDecl{objDefn = vD}) vDefn
+  addVar $ maybe vDecl (\vD -> vDecl{varAssignment = vD}) vDefn
 
 simpleVariableDeclaration :: SolidityParser SolidityObjDef
 simpleVariableDeclaration = do
   variableType <- simpleTypeExpression
   typeMaker <- variableModifiers
   variableName <- option "" identifier
-  return $ (typeMaker variableType){objName = variableName}
+  return $ (typeMaker variableType){varName = variableName}
 
 {- Functions and function-like -}
 
@@ -99,37 +99,31 @@ functionDeclaration = do
   args <- tupleDeclaration
   objMaker <- functionModifiers
   functionBody <- bracedCode <|> (semi >> return "")
-  addObj $ (objMaker name args){objDefn = functionBody}
+  addFunc $ (objMaker name args){funcDefn = functionBody}
 
 eventDeclaration :: SolidityParser ()
 eventDeclaration = do
   reserved "event"
   name <- identifier
   logs <- tupleDeclaration
-  optional $ reserved "anonymous"
+  isAnon <- option False $ (reserved "anonymous" >> True)
   semi
-  addObj $ ObjDef {
-    objName = name,
-    objValueType = NoValue,
-    objArgType = logs,
-    objDefn = "",
-    objVisibility = PublicVisible,
-    objStorage = MemoryStorage
+  addEvent $ EventDef {
+    eventName = name,
+    eventTopics = logs,
+    eventIsAnonymous = isAnon
     }
 
 modifierDeclaration :: SolidityParser ()
 modifierDeclaration = do
   reserved "modifier"
   name <- identifier
-  args <- option NoValue tupleDeclaration
+  args <- option (TupleValue []) tupleDeclaration
   defn <- bracedCode
-  addObj $ ObjDef {
-    objName = name,
-    objValueType = NoValue,
-    objArgType = args,
-    objDefn = defn,
-    objVisibility = PublicVisible,
-    objStorage = MemoryStorage
+  addModifier $ ModifierDef {
+    modName = name,
+    modArgs = args,
+    modDefn = defn
     }
 
 {- Not really declarations -}
@@ -146,34 +140,34 @@ visibilityModifier =
 
 storageModifier :: SolidityParser SolidityStorage
 storageModifier =
-  (reserved "constant" >> return ConstantStorage) <|>
+  (reserved "constant" >> return ValueStorage) <|>
   (reserved "storage" >> return StorageStorage) <|>
-  (reserved "memory" >> return MemoryStorage)
+  (reserved "memory" >> return MemoryStorage) <|>
+  (reserved "indexed" >> return IndexedStorage)
 
-variableModifiers :: SolidityParser (SolidityBasicType -> SolidityObjDef)
+variableModifiers :: SolidityParser (SolidityBasicType -> SolidityVarDef)
 variableModifiers =
   permute $ (\v s ->
-    \variableType -> ObjDef {
-      objName = "",
-      objValueType = SingleValue variableType,
-      objArgType = NoValue,
-      objDefn = "",
-      objVisibility = v,
-      objStorage = s
+    \variableType -> VarDef {
+      varName = "",
+      varType = variableType,
+      varAssignment = "",
+      varVisibility = v,
+      varStorage = s
     }) <$?>
     (InternalVisible, visibilityModifier) <|?>
     (StorageStorage, storageModifier)
 
-functionModifiers :: SolidityParser (Identifier -> SolidityTuple -> SolidityObjDef)
+functionModifiers :: SolidityParser (Identifier -> SolidityTuple -> SolidityFuncDef)
 functionModifiers =
   permute $ (\r v s _ _ _ _ ->
-    \name args -> ObjDef {
-      objName = name,
-      objValueType = r,
-      objArgType = args,
-      objDefn = "",
-      objVisibility = v,
-      objStorage = s
+    \name args -> FuncDef {
+      funcName = name,
+      funcValueType = r,
+      funcArgType = args,
+      funcDefn = "",
+      funcVisibility = v,
+      funcStorage = case s of {ValueStorage -> True; _ -> False}
     }) <$?>
     (TupleValue [], returnModifier) <|?>
     (PublicVisible, visibilityModifier) <|?>
