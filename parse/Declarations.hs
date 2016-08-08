@@ -12,21 +12,23 @@ import Lexer
 import ParserTypes
 import Types
 
-solidityContract :: SolidityParser ()
-solidityContract = do
-  (reserved "contract" >> return ()) <|> (reserved "library" >> setIsLibrary)
-  setContractName =<< identifier
+solidityContract :: FileName -> SolidityParser ()
+solidityContract fileName = do
+  isLibrary <- (reserved "contract" >> return False) <|> (reserved "library" >> True)
+  name <- identifier
+  initContract ContractID{
+    contractRealFile = fileName,
+    contractRealName = name
+    }
+  setLibrary isLibrary
   optional $ do
     reserved "is"
     commaSep1 $ do
       name <- intercalate "." <$> sepBy1 identifier dot
       consArgs <- option "" parensCode
-      addBase name consArgs
+      addBase name consArgs -- Executed left-to-right, so least-to-most derived
     return ()
   braces $ skipMany solidityDeclaration
-
--- TODO: move this to layout and json modules.  Effect varies.
---    contractObjs = filter (tupleHasValue . objValueType) contractObjs',
 
 solidityDeclaration :: SolidityParser ()
 solidityDeclaration =
@@ -49,7 +51,7 @@ structDeclaration = do
     semi
     return decl
   addType $ TypeDef {
-    typeName = structName,
+    typeID = structName,
     typeDecl = Struct { fields = structFields }
     }
 
@@ -59,7 +61,7 @@ enumDeclaration = do
   enumName <- identifier
   enumFields <- braces $ commaSep1 identifier
   addType $ TypeDef {
-    typeName = enumName,
+    typeID = enumName,
     typeDecl = Enum { names = enumFields}
     }
 
@@ -88,7 +90,7 @@ simpleVariableDeclaration = do
   variableType <- simpleTypeExpression
   typeMaker <- variableModifiers
   variableName <- option "" identifier
-  return $ (typeMaker variableType){varName = variableName}
+  return $ (typeMaker variableType){varID = variableName}
 
 {- Functions and function-like -}
 
@@ -109,7 +111,7 @@ eventDeclaration = do
   isAnon <- option False $ reserved "anonymous" >> return True
   semi
   addEvent $ EventDef {
-    eventName = name,
+    eventID = name,
     eventTopics = logs,
     eventIsAnonymous = isAnon
     }
@@ -121,7 +123,7 @@ modifierDeclaration = do
   args <- option (TupleValue []) tupleDeclaration
   defn <- bracedCode
   addModifier $ ModifierDef {
-    modName = name,
+    modID = name,
     modArgs = args,
     modDefn = defn
     }
@@ -149,7 +151,7 @@ variableModifiers :: SolidityParser (SolidityBasicType -> SolidityVarDef)
 variableModifiers =
   permute $ (\v s ->
     \variableType -> VarDef {
-      varName = "",
+      varID = "",
       varType = variableType,
       varAssignment = "",
       varVisibility = v,
@@ -162,7 +164,7 @@ functionModifiers :: SolidityParser (Identifier -> SolidityTuple -> SolidityFunc
 functionModifiers =
   permute $ (\r v s _ _ _ _ ->
     \name args -> FuncDef {
-      funcName = name,
+      funcID = name,
       funcValueType = r,
       funcArgType = args,
       funcDefn = "",

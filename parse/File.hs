@@ -1,7 +1,6 @@
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module File (solidityFile) where
 
-import Data.Bifunctor
 import Data.Either
 import Data.Map (fromList)
 
@@ -15,16 +14,25 @@ import Declarations
 import Lexer
 import ParserTypes
 
-solidityFile :: SolidityParser SolidityFile
-solidityFile = do
+solidityFile :: FileName -> SolidityParser SolidityFile
+solidityFile fileName = do
   whiteSpace
   toplevel <- many $ do
-    setState ("", emptyContract)
     let eitherImport = Right <$> solidityImport
-        eitherContract = Left <$> (solidityContract >> getState)
+        eitherContract = Left <$> (solidityContract fileName >> getState)
     eitherImport <|> eitherContract
   eof
-  return $ uncurry SolidityFile $ first fromList $ partitionEithers toplevel
+  let (contracts, imports) = partitionEithers toplevel
+      contracts' = map (
+        \c@Contract{contractOwnDeclarations = cDs@{declaredVars = vs}} ->
+          -- Vars were prepended in order, we want them appended in order
+          c{contractOwnDeclarations = cDs{declaredVars = reverse vs}}
+        ) contracts
+      contractsAssoc = map (\c -> (contractRealName $ contractID c, c)) contracts'
+  return SolidityFile {
+    fileContracts = fromList contractsAssoc,
+    fileImports = imports
+    }
  
 solidityImport :: SolidityParser (FileName, ImportAs)
 solidityImport = do

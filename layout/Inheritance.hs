@@ -7,34 +7,35 @@ import qualified Data.Map as Map
 import ParserTypes
 import C3
 
-doInheritance :: SolidityContracts -> SolidityContracts
-doInheritance contracts = Map.map combineContracts $ c3Linearize inheritMap
+doInheritance :: Map FileName SolidityContracts -> SolidityContract -> SolidityContract
+doInheritance files contract = Map.map combineContracts $ c3Linearize inheritMap
   where
-    inheritMap = Map.map (map fst . contractInherits) contracts
-    combineContracts = foldr1 combine . NonEmpty.map (contracts Map.!)
+    inheritMap = Map.map (getInheritsList files) contractIDMap
+    contractIDMap = Map.foldr Map.union Map.empty $ makeContractIDMap files
+    combineContracts cIDs = foldr1 combine . NonEmpty.map (contractIDMap Map.!)
   
+makeContractIDMap :: SolidityContracts -> Map ContractID SolidityContract
+makeContractIDMap contracts = Map.foldr insertContractID Map.empty contracts
+  where insertContractID c = Map.insert (contractID c)
+
+getInheritsList :: Map FileName SolidityContracts -> SolidityContract -> [ContractID]
+getInheritsList files c{contractInheritancePaths = UnresolvedBases l} =
+  map (lookupName . fst) l
+  where
+    lookupName cN = Map.findWithDefault (theError cN) cN contracts
+    theError cN = error $ "Invalid base name " ++ show cN ++ " in contract " ++ show n
+    contracts = files Map.! f
+    ContractID{contractRealFile = f, contractRealName = n} = cID c 
+
+getInheritsList _ = error $ "Inheritance paths constructor should be UnresolvedBases"
+
 combine :: SolidityContract -> SolidityContract -> SolidityContract
 combine c1 c2 = 
-  -- TODO: qualify the names of imported vars, funcs, events, modifiers
   Contract {
-    contractName = contractName c1,
-    -- objects are prepended to the list during parsing: later ones first
-    contractVars = contractVars c1 ++ contractVars c2,
-    contractFuncs = contractFuncs c1 `Map.union` contractFuncs c2,
-    contractEvents = contractEvents c1 `Map.union` contractEvents c2,
-    contractModifiers = contractModifiers c1 `Map.union` contractModifiers c2,
-    -- derived contract types override base ones.  The originals are
-    -- available in contractLibraryTypes.
-    -- TODO: inherited types have their layout done twice like this
-    contractTypes = contractTypes c1 `Map.union` contractTypes c2,
-    contractLibraryTypes =
-      let
-        libUnion = Map.unionWith Set.union
-        typesLib = Map.singleton (contractName c2) $
-                   Map.foldr (Set.insert . typeName) Set.empty $ contractTypes c2
-      in typesLib `libUnion` contractLibraryTypes c1 `libUnion` contractLibraryTypes c2,
-    -- order of inheritance is right-to-left
-    contractInherits = contractInherits c1 ++ contractInherits c2, 
+    contractID = contractID c1,
+    contractOwnDeclarations = contractOwnDeclarations c1,
+    contractAllDeclarations = contractOwnDeclarations c1 : contractAllDeclarations c2,
+    contractInheritancePaths = contractInheritancePaths c1, -- Fix this
     contractIsLibrary = contractIsLibrary c1
   }
 

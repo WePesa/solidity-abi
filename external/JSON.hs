@@ -76,18 +76,18 @@ parseToJSON fileName sources = do
   mainFile <- first convertImportError $ doImports fileName parsedFiles
   contracts <- return $ doInheritance mainFile
   layouts <- return $ doLayout contracts
-  let results = Map.intersectionWith (contractABI results layouts) layouts contracts
+  let results = Map.intersectionWithKey (contractABI results layouts) layouts contracts
   return $ toJSON results
 
-contractABI :: Map ContractName ContractABI -> SolidityContractsLayout ->
+contractABI :: Map ContractName ContractABI -> SolidityContractsLayout -> ContractName ->
                SolidityContractLayout -> SolidityContract -> ContractABI
-contractABI allABI allLayouts layout contract =
+contractABI allABI allLayouts name layout contract =
   ContractABI {
     contractVarsABI = varsABI varsL vars,
     contractFuncsABI = funcsABI typesL allTypesL funcs,
     contractEventsABI = eventsABI typesL allTypesL events,
     contractTypesABI = typesABI typesL types,
-    contractLibraryTypesABI = libTypesABI allABI lTypes,
+    contractLibraryTypesABI = Map.filter (not . Map.null) $ libTypesABI allABI lTypes,
     contractConstrABI = constrABI name funcs,
     contractLibraryABI = contractIsLibrary contract
     }
@@ -96,7 +96,6 @@ contractABI allABI allLayouts layout contract =
     typesL = typesLayout layout 
     allTypesL = Map.map typesLayout allLayouts
 
-    name = contractName contract
     vars = makeVarsMap $ contractVars contract
     funcs = contractFuncs contract `del` name `del` ""
     events = contractEvents contract

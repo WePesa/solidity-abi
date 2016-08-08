@@ -1,20 +1,11 @@
-module Parser (
-  parseSolidity,
-  FileName, Identifier, ContractName, SourceCode,
-  ImportAs(..), SolidityFile(..),
-  SolidityContract(..), SolidityVarDef(..),
-  SolidityFuncDef(..), SolidityEventDef(..),
-  SolidityModifierDef(..), 
-  SolidityTypeDef(..), SolidityTuple(..),
-  SolidityBasicType(..), SolidityNewType(..),
-  SolidityVisibility(..), SolidityStorage(..)
-  ) where
+module Parser where
 
-import Text.Parsec hiding (parse)
+import Text.Parsec
 
 import File
 import ParserTypes
 
 parseSolidity :: FileName -> SourceCode -> Either ParseError SolidityFile
-parseSolidity sName sCode = runParser solidityFile ("", emptyContract) sName sCode
+parseSolidity fileName source = 
+  runParser (solidityFile fileName) ("", emptyContract) fileName source
 

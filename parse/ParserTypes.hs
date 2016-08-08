@@ -10,49 +10,77 @@ import Data.Bifunctor
 import Text.Parsec
 import Numeric.Natural
 
-type SolidityParser = Parsec SourceCode (ContractName, SolidityContract)
+type SolidityParser = Parsec SourceCode SolidityContract
 
-setContractName :: ContractName -> SolidityParser ()
-setContractName n = modifyState $ \(_, c) -> (n, c{contractName = n})
+initContract :: ContractID -> SolidityParser ()
+initContract cID = putState $ emptyContract cID
 
 addVar :: SolidityVarDef -> SolidityParser ()
-addVar o = modifyState $ second $ \c@Contract{contractVars = os} -> c{contractVars = o:os}
+addVar v = modifyState $
+  \c@Contract{contractOwnDeclarations = cDs@Declarations{declaredVars = vs}} =
+    c@Contract{contractOwnDeclarations = cDs{declaredVars = v:vs}}
 
 addFunc :: SolidityFuncDef -> SolidityParser ()
-addFunc o = modifyState $ second $ \c@Contract{contractFuncs = os} -> c{contractFuncs = Map.insert (funcName o) o os}
+addFunc f = modifyState $
+  \c@Contract{contractOwnDeclarations = cDs@Declarations{declaredFuncs = fs}} =
+    c@Contract{contractOwnDeclarations = cDs{declaredFuncs = Map.insert (funcID f) f fs}}
 
 addEvent :: SolidityEventDef -> SolidityParser ()
-addEvent o = modifyState $ second $ \c@Contract{contractEvents = os} -> c{contractEvents = Map.insert (eventName o) o os}
+addEvent e = modifyState $ 
+  \c@Contract{contractOwnDeclarations = cDs@Declarations{declaredEvents = es}} =
+    c@Contract{contractOwnDeclarations = cDs{declaredEvents = Map.insert (eventID e) e es}}
 
 addModifier :: SolidityModifierDef -> SolidityParser ()
-addModifier o = modifyState $ second $ \c@Contract{contractModifiers = os} -> c{contractModifiers = Map.insert (modName o) o os}
+addModifier m = modifyState $
+  \c@Contract{contractOwnDeclarations = cDs@Declarations{declaredModifiers = ms}} =
+    c@Contract{contractOwnDeclarations = cDs{declaredModifiers = Map.insert (modID m) m ms}}
 
 addType :: SolidityTypeDef -> SolidityParser ()
-addType t = modifyState $ second $ \c@Contract{contractTypes = ts} -> c{contractTypes = Map.insert (typeName t) t ts}
+addType t = modifyState $
+  \c@Contract{contractOwnDeclarations = cDs@Declarations{declaredTypes = ts}} =
+    c@Contract{contractOwnDeclarations = cDs{declaredTypes = Map.insert (typeID t) t ts}}
 
 addLibraryType :: ContractName -> Identifier -> SolidityParser ()
-addLibraryType n t = modifyState $ second $
-  \c@Contract{contractLibraryTypes = lts} ->
-    c{contractLibraryTypes = Map.alter (maybe (Just Set.empty) (Just . Set.insert t)) n lts}
+addLibraryType n t = modifyState $
+  \c@Contract{contractOwnDeclarations = cDs@Declarations{declaredLibraryTypes = lts}} =
+    c{contractOwnDeclarations =
+      cDs{declaredLibraryTypes =
+        Map.alter (maybe (Just Set.empty) (Just . Set.insert t)) n lts
+        }
+      }
 
 addBase :: ContractName -> SourceCode -> SolidityParser ()
-addBase n x = modifyState $ second $ \c@Contract{contractInherits = bs} -> c{contractInherits = (n, x) : bs}
+addBase n x = modifyState $
+  \c@Contract{contractInheritancePaths = UnresolvedBases l} =
+    c{contractInheritancePaths = UnresolvedBases $ (n,x) : l}
 
-setIsLibrary :: SolidityParser ()
-setIsLibrary = modifyState $ second $ \c -> c{contractIsLibrary = True}
+setIsLibrary :: Bool -> SolidityParser ()
+setIsLibrary b = modifyState $ \c -> c{contractIsLibrary = b}
 
-emptyContract :: SolidityContract
-emptyContract = Contract {
-  contractName = "",
-  contractVars = [],
-  contractFuncs = Map.empty,
-  contractEvents = Map.empty,
-  contractModifiers = Map.empty,
-  contractTypes = Map.empty,
-  contractLibraryTypes = Map.empty,
-  contractInherits = [],
-  contractIsLibrary = False
-  }
+emptyContract :: ContractID -> SolidityContract
+emptyContract cID = 
+  Contract {
+    contractID = cID,
+    contractOwnDeclarations = emptyDeclarations cID,
+    contractAllDeclarations = [],
+    contractInheritancePaths = emptyInheritanceMap
+    contractIsLibrary = False
+    }
+
+emptyInheritanceMap :: InheritanceMap
+emptyInheritanceMap = UnresolvedBases []
+
+emptyDeclarations :: ContractID -> SolidityDeclarations
+emptyDeclarations cID =
+  Declarations {
+    declarationsRealContract = cID,
+    declaredVars = [],
+    declaredFuncs = Map.empty,
+    declaredEvents = Map.empty,
+    declaredModifiers = Map.empty,
+    declaredTypes = Map.empty,
+    declaredLibraryTypes = Map.empty
+    }
 
 type FileName = SourceName
 type Identifier = String
@@ -71,6 +99,7 @@ data SolidityFile =
     fileImports :: [(FileName, ImportAs)]
     } deriving (Eq)
 
+type SolidityFiles = Map FileName SolidityFile
 type SolidityContracts = Map ContractName SolidityContract
 type SolidityTypes = Map Identifier SolidityTypeDef
 type SolidityVars = Map Identifier SolidityVarDef
@@ -79,22 +108,45 @@ type SolidityEvents = Map Identifier SolidityEventDef
 type SolidityModifiers = Map Identifier SolidityModifierDef
 type SolidityLibraryTypes = Map ContractName (Set Identifier)
 
+data ContractID =
+  ContractID {
+    contractRealFile :: FileName,
+    contractRealName :: ContractName
+    } deriving (Eq, Ord)
+
+data InheritanceMap =
+  InheritanceMap {
+    -- Ordered with the most derived contracts first
+    inheritanceBases :: [(ContractName, InheritanceMap)],
+    inheritanceLeaf :: (ContractID, SourceCode)
+    } |
+  UnresolvedBases [(ContractName, SourceCode)]
+
 data SolidityContract =
   Contract {
-    contractName :: ContractName,
-    contractVars :: [SolidityVarDef], -- Must be ordered
-    contractFuncs :: SolidityFuncs,
-    contractEvents :: SolidityEvents,
-    contractModifiers :: SolidityModifiers,
-    contractTypes :: SolidityTypes,
-    contractLibraryTypes :: SolidityLibraryTypes,
-    contractInherits :: [(ContractName, SourceCode)], -- Must be ordered
+    contractID :: ContractID,
+    contractOwnDeclarations :: ContractDeclarations,
+    -- Ordered with most derived contracts' declarations first
+    contractAllDeclarations :: [ContractDeclarations],
+    contractInheritancePaths :: InheritanceMap,
     contractIsLibrary :: Bool
+    } deriving (Eq)
+
+data ContractDeclarations =
+  Declarations {
+    declarationsRealContract :: ContractID,
+    -- In order of increasing storage location
+    declaredVars :: [SolidityVarDef],
+    declaredFuncs :: SolidityFuncs,
+    declaredEvents :: SolidityEvents,
+    declaredModifiers :: SolidityModifiers,
+    declaredTypes :: SolidityTypes,
+    declaredLibraryTypes :: SolidityLibraryTypes
     } deriving (Eq)
 
 data SolidityVarDef =
   VarDef {
-    varName :: Identifier,
+    varID :: Identifier,
     varVisibility :: SolidityVisibility,
     varAssignment :: String,
     varType :: SolidityBasicType,
@@ -103,7 +155,7 @@ data SolidityVarDef =
 
 data SolidityFuncDef =
   FuncDef {
-    funcName :: Identifier,
+    funcID :: Identifier,
     funcVisibility :: SolidityVisibility,
     funcDefn :: String,
     funcValueType :: SolidityTuple,
@@ -113,14 +165,14 @@ data SolidityFuncDef =
 
 data SolidityEventDef =
   EventDef {
-    eventName :: Identifier,
+    eventID :: Identifier,
     eventTopics :: SolidityTuple,
     eventIsAnonymous :: Bool
     } deriving (Eq)
 
 data SolidityModifierDef =
   ModifierDef {
-    modName :: Identifier,
+    modID :: Identifier,
     modDefn :: String,
     modArgs :: SolidityTuple
     } deriving (Eq)
@@ -133,7 +185,7 @@ newtype SolidityTuple = TupleValue [SolidityVarDef] deriving (Eq)
 
 data SolidityTypeDef =
   TypeDef {
-    typeName :: Identifier,
+    typeID :: Identifier,
     typeDecl :: SolidityNewType
     }
   deriving (Eq)
