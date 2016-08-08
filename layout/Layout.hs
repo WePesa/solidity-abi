@@ -1,11 +1,4 @@
-module Layout (
-  doLayout,
-  SolidityContractsLayout, SolidityTypesLayout,
-  SolidityVarsLayout,
-  SolidityContractLayout(..), SolidityTypeLayout(..),
-  SolidityVarLayout(..),
-  StorageBytes
-  ) where
+module Layout (doLayout) where
 
 import qualified Data.Map as Map
 

@@ -5,14 +5,14 @@ import Numeric.Natural
 
 import ParserTypes
 
-type SolidityContractsLayout = Map ContractName SolidityContractLayout
-type SolidityTypesLayout = Map Identifier SolidityTypeLayout
-type SolidityVarsLayout = Map Identifier SolidityVarLayout
+type SolidityContractsLayout = Map ContractID SolidityContractLayout
+type SolidityTypesLayout = Map DeclarationID SolidityTypeLayout
+type SolidityVarsLayout = Map DeclarationID SolidityVarLayout
 
 data SolidityContractLayout =
   ContractLayout {
-    varsLayout :: Map Identifier SolidityVarLayout,
-    typesLayout :: Map Identifier SolidityTypeLayout,
+    varsLayout :: SolidityVarsLayout
+    typesLayout :: SolidityTypesLayout
     layoutIsLibrary :: Bool
     }
 

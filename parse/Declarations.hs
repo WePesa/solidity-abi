@@ -25,8 +25,8 @@ solidityContract fileName = do
     reserved "is"
     commaSep1 $ do
       name <- intercalate "." <$> sepBy1 identifier dot
-      consArgs <- option "" parensCode
-      addBase name consArgs -- Executed left-to-right, so least-to-most derived
+      _ <- option "" parensCode
+      addBase name -- Executed left-to-right, so least-to-most derived
     return ()
   braces $ skipMany solidityDeclaration
 
@@ -90,7 +90,8 @@ simpleVariableDeclaration = do
   variableType <- simpleTypeExpression
   typeMaker <- variableModifiers
   variableName <- option "" identifier
-  return $ (typeMaker variableType){varID = variableName}
+  cID <- getContractID
+  return $ typeMaker variableName variableType
 
 {- Functions and function-like -}
 
@@ -147,11 +148,11 @@ storageModifier =
   (reserved "memory" >> return MemoryStorage) <|>
   (reserved "indexed" >> return IndexedStorage)
 
-variableModifiers :: SolidityParser (SolidityBasicType -> SolidityVarDef)
+variableModifiers :: SolidityParser (Identifier -> SolidityBasicType -> SolidityVarDef)
 variableModifiers =
   permute $ (\v s ->
-    \variableType -> VarDef {
-      varID = "",
+    \name variableType -> VarDef {
+      varID = name,
       varType = variableType,
       varAssignment = "",
       varVisibility = v,

@@ -49,10 +49,10 @@ addLibraryType n t = modifyState $
         }
       }
 
-addBase :: ContractName -> SourceCode -> SolidityParser ()
-addBase n x = modifyState $
+addBase :: ContractName -> SolidityParser ()
+addBase n = modifyState $
   \c@Contract{contractInheritancePaths = UnresolvedBases l} =
-    c{contractInheritancePaths = UnresolvedBases $ (n,x) : l}
+    c{contractInheritancePaths = UnresolvedBases $ x : l}
 
 setIsLibrary :: Bool -> SolidityParser ()
 setIsLibrary b = modifyState $ \c -> c{contractIsLibrary = b}
@@ -95,12 +95,13 @@ data ImportAs =
    
 data SolidityFile = 
   SolidityFile {  
-    fileContracts :: SolidityContracts,
+    fileContracts :: Map Identifier SolidityContract,
     fileImports :: [(FileName, ImportAs)]
     } deriving (Eq)
 
 type SolidityFiles = Map FileName SolidityFile
 type SolidityContracts = Map ContractName SolidityContract
+type ContractsByID = Map ContractID SolidityContract
 type SolidityTypes = Map Identifier SolidityTypeDef
 type SolidityVars = Map Identifier SolidityVarDef
 type SolidityFuncs = Map Identifier SolidityFuncDef
@@ -114,19 +115,25 @@ data ContractID =
     contractRealName :: ContractName
     } deriving (Eq, Ord)
 
+data DeclarationID = 
+  DeclarationID {
+    declarationContract :: ContractID,
+    declarationRealName :: Identifier,
+    } deriving (Eq, Ord)
+
 data InheritanceMap =
   InheritanceMap {
     -- Ordered with the most derived contracts first
     inheritanceBases :: [(ContractName, InheritanceMap)],
-    inheritanceLeaf :: (ContractID, SourceCode)
+    inheritanceLeaf :: ContractID
     } |
-  UnresolvedBases [(ContractName, SourceCode)]
+  UnresolvedBases [ContractName]
 
 data SolidityContract =
   Contract {
     contractID :: ContractID,
     contractOwnDeclarations :: ContractDeclarations,
-    -- Ordered with most derived contracts' declarations first
+    -- From most derived to least
     contractAllDeclarations :: [ContractDeclarations],
     contractInheritancePaths :: InheritanceMap,
     contractIsLibrary :: Bool
@@ -134,8 +141,7 @@ data SolidityContract =
 
 data ContractDeclarations =
   Declarations {
-    declarationsRealContract :: ContractID,
-    -- In order of increasing storage location
+    -- In order of decreasing storage location
     declaredVars :: [SolidityVarDef],
     declaredFuncs :: SolidityFuncs,
     declaredEvents :: SolidityEvents,

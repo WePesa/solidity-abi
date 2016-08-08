@@ -73,8 +73,8 @@ instance ToJSON ContractABI where
 parseToJSON :: FileName -> Map FileName SourceCode -> Either Value Value
 parseToJSON fileName sources = do
   parsedFiles <- first (error . show) $ sequence $ Map.mapWithKey parseSolidity sources
-  mainFile <- first convertImportError $ doImports fileName parsedFiles
-  contracts <- return $ doInheritance mainFile
+  contracts0 <- first convertImportError $ doImports parsedFiles
+  contracts <- return $ doInheritance contracts0
   layouts <- return $ doLayout contracts
   let results = Map.intersectionWithKey (contractABI results layouts) layouts contracts
   return $ toJSON results

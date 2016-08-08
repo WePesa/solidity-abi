@@ -23,12 +23,7 @@ solidityFile fileName = do
     eitherImport <|> eitherContract
   eof
   let (contracts, imports) = partitionEithers toplevel
-      contracts' = map (
-        \c@Contract{contractOwnDeclarations = cDs@{declaredVars = vs}} ->
-          -- Vars were prepended in order, we want them appended in order
-          c{contractOwnDeclarations = cDs{declaredVars = reverse vs}}
-        ) contracts
-      contractsAssoc = map (\c -> (contractRealName $ contractID c, c)) contracts'
+      contractsAssoc = map (\c -> (contractRealName $ contractID c, c)) contracts
   return SolidityFile {
     fileContracts = fromList contractsAssoc,
     fileImports = imports
