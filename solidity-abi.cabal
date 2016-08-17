@@ -27,6 +27,8 @@ executable solidity-abi
 
 library
   exposed-modules:     Blockchain.Ethereum.Solidity.JSON
+                       Blockchain.Ethereum.Solidity.Structure
+                       Blockchain.Ethereum.Solidity.Layout
   other-modules:       JSON
                        Selector
                        Layout
@@ -36,12 +38,14 @@ library
                        File
                        Lexer
                        Parser
-                       ParserTypes
+                       SolidityTypes
+                       SolidityParser
                        Types
                        DAG
                        Qualify
                        Inheritance
                        Files
+                       Structure
                        C3
   build-depends:       base,
                        containers,

@@ -12,7 +12,8 @@ import Prelude hiding (lookup)
 
 import Declarations
 import Lexer
-import ParserTypes
+import SolidityParser
+import SolidityTypes
 
 solidityFile :: FileName -> SolidityParser SolidityFile
 solidityFile fileName = do

@@ -1,29 +1,29 @@
-module Layout (doLayout) where
+module Layout (doContractLayouts) where
 
 import qualified Data.Map as Map
 
 import Control.Monad
 import Control.Monad.Trans.Reader
 
-import ParserTypes
+import SolidityTypes
 import LayoutTypes
 import DAG
 
-type LayoutReader = Reader (ContractName, SolidityContractsLayout)
+type LayoutReader = Reader (ContractID, SolidityContractsLayout)
 
-doLayout :: SolidityContracts -> SolidityContractsLayout
-doLayout contracts = either (error "Library layout error") id $ do
+doContractLayouts :: ContractsByID -> SolidityContractsLayout
+doContractLayouts contracts = either (error "Library layout error") id $ do
   validateLibraries contracts
-  let result = Map.mapWithKey (\n c -> runReader (doContractLayout c) (n,result)) contracts
+  let result = Map.mapWithKey (\cID c -> runReader (doContractLayout c) (cID,result)) contracts
   return result
 
-validateLibraries :: SolidityContracts -> Either (DAGError ContractName) ()
-validateLibraries contractDefs = 
-  checkDAG $ Map.map (Map.keys . contractLibraryTypes) contractDefs
+validateLibraries :: ContractsByID -> Either (DAGError ContractName) ()
+validateLibraries contracts = 
+  checkDAG $ Map.map (Map.keys . contractLibraryTypes) contracts
 
 doContractLayout :: SolidityContract -> LayoutReader SolidityContractLayout
 doContractLayout contract = do
-  varsL <- doVarsLayout $ contractVars contract
+  varsL <- doVarsLayout (declaredVars $ contractDeclarationsByID contract) (contractVars contract)
   typesL <- doTypesLayout $ contractTypes contract
   return $ ContractLayout {
     varsLayout = varsL,
@@ -47,9 +47,11 @@ doTypeLayout (Struct fields) = do
     typeUsedBytes = nextLayoutStart lastEnd keyBytes
     }
 
-doVarsLayout :: [SolidityVarDef] -> LayoutReader SolidityVarsLayout
-doVarsLayout vars = do
-  varsL <- foldr (\v vLs -> makeNextVarL v vLs) (return []) $ filter isStorage vars
+doVarsLayout :: [DeclarationID] -> Map DeclarationID SolidityVarDef ->
+                LayoutReader SolidityVarsLayout
+doVarsLayout varDefs varIDs = do
+  -- vars are listed from high storage to low; we work from the right
+  varsL <- foldr (\v vLs -> makeNextVarL v vLs) (return []) $ map (varDefs Map.!) varIDs
   return $ makeVarsMap varsL
   where
     makeVarsMap vLs = Map.fromList $ zipWith (\v vL -> (varName v, vL)) vars vLs
@@ -96,26 +98,27 @@ usedBytes t = case t of
 
 findTypedef :: Identifier -> Maybe ContractName -> LayoutReader SolidityTypeLayout
 findTypedef name libM = do
-  (cName, contractsL) <- ask
+  (cID, contractsL) <- ask
   let
-    contractL = contractsL Map.! cName
+    contractL = contractsL Map.! cID
     notFound =
-      error $ "Type " ++ name ++ " not a contract nor found in contract " ++ cName ++
-      maybe "" (" nor in library or base contract " ++) libM
+      error $ "Type " ++ name ++
+              " not a contract nor found in contract " ++ contractRealName cID ++
+              maybe "" (" nor in library or base contract " ++) libM
   return $ either id id $ do
     findOrContinue name contractL
-    if name `elem` Map.keys contractsL
+    if cID{realContractName = name} `elem` Map.keys contractsL
     then Left $ ContractTLayout addressBytes
     else Right()
     lib <- maybe notFound Right libM
     library <- maybe (error $ "No such library: " ++ lib) Right $
-               Map.lookup lib contractsL
+               Map.lookup cID{realContractName = lib} contractsL
     when (not $ layoutIsLibrary library) $ error $ "Not a library: " ++ lib
     findOrContinue name library
     notFound
 
   where
-    findOrContinue n c = maybe (Right ()) Left $ Map.lookup name $ typesLayout c
+    findOrContinue n c = maybe (Right ()) Left $ Map.lookup name $ declaredTypes $ contractDeclarationsByName c
 
 nextLayoutStart :: StorageBytes -> StorageBytes -> StorageBytes
 nextLayoutStart 0 _ = 0

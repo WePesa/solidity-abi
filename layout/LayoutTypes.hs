@@ -3,7 +3,7 @@ module LayoutTypes where
 import Data.Map (Map)
 import Numeric.Natural
 
-import ParserTypes
+import SolidityTypes
 
 type SolidityContractsLayout = Map ContractID SolidityContractLayout
 type SolidityTypesLayout = Map DeclarationID SolidityTypeLayout

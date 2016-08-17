@@ -9,7 +9,8 @@ import Text.Parsec
 import Text.Parsec.Perm
 
 import Lexer
-import ParserTypes
+import SolidityParser
+import SolidityTypes
 import Types
 
 solidityContract :: FileName -> SolidityParser ()
@@ -29,6 +30,11 @@ solidityContract fileName = do
       addBase name -- Executed left-to-right, so least-to-most derived
     return ()
   braces $ skipMany solidityDeclaration
+  isAbstract <- getIsAbstract
+
+  if isAbstract && isLibrary
+  then parserFail $ "Library " ++ name ++ " may not be an abstract contract"
+  else return ()
 
 solidityDeclaration :: SolidityParser ()
 solidityDeclaration =
@@ -102,7 +108,7 @@ functionDeclaration = do
   args <- tupleDeclaration
   objMaker <- functionModifiers
   functionBody <- bracedCode <|> (semi >> return "")
-  addFunc $ (objMaker name args){funcDefn = functionBody}
+  addFunc $ (objMaker name args){funcHasCode = not $ null functionBody}
 
 eventDeclaration :: SolidityParser ()
 eventDeclaration = do

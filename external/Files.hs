@@ -12,7 +12,7 @@ import Data.Monoid
 import Data.Traversable ()
 import System.FilePath
 
-import ParserTypes
+import SolidityTypes
 import DAG
 import Qualify
 
@@ -57,8 +57,8 @@ doImports files = do
 makeContractIDMap :: Map FileName SolidityContracts -> ContractsByID
 makeContractIDMap contracts = 
   Map.foldr Map.union Map.empty $ Map.map $ 
-  Map.foldr insertContractID Map.empty contracts
-  where insertContractID c = Map.insert (contractID c) c
+  Map.foldrWithKey insertContractID Map.empty contracts
+  where insertContractID cName c = Map.insert (contractID c) c
 
 resolveImports :: Map FileName SolidityContracts ->
                   Map FileName SolidityFile ->
@@ -80,13 +80,16 @@ getImportDefs :: FileName ->
                  Either ImportError (Map ContractName a)
 getImportDefs mainFileName fileDefs imports = do
   importsM <- first (convertQualifyError mainFileName) $ getQualifiedNames imports' fileDefs
-  sequence $ Map.foldrWithKey unionWithError Map.empty importsM
+  sequence $ Map.foldrWithKey unionWithError Map.empty $ Map.mapWithKey adjustContractIDs importsM
   where
     imports' = map (second convertImportAs) imports
     convertImportAs Unqualified = QualifyAll id
     convertImportAs (StarPrefix p) = QualifyAll ((p ++ ".") ++)
     convertImportAs (Aliases as) = QualifySome as
     unionWithError x = Map.unionWithKey (\k _ _ -> Left $ DuplicateSymbol mainFileName x k) . Map.map Right
+    adjustContractIDs = Map.mapWithKey . adjustContractID
+    adjustContractID file name contract =
+      contract{contractID = ContractID{contractRealFile = file, contractRealName = name}}
 
 validateImports :: Map FileName SolidityFile -> Either ImportError ()
 validateImports files = 

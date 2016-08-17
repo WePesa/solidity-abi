@@ -5,7 +5,7 @@ import Text.Parsec
 import Text.Parsec.Language (javaStyle)
 import qualified Text.Parsec.Token as P
 
-import ParserTypes
+import SolidityParser
 
 bracedCode :: SolidityParser String
 bracedCode = braces $ fmap concat $ many $ (many1 $ noneOf "{}") <|> do

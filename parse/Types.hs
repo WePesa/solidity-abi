@@ -6,7 +6,8 @@ import Text.Parsec
 
 import Expression
 import Lexer
-import ParserTypes
+import SolidityParser
+import SolidityTypes
 
 simpleTypeExpression :: SolidityParser SolidityBasicType
 simpleTypeExpression = try arrayType <|> simpleType <|> mappingType

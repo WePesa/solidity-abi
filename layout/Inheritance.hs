@@ -4,7 +4,7 @@ import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Set as Set
 import qualified Data.Map as Map
 
-import ParserTypes
+import SolidityTypes
 import C3
 
 doInheritance :: ContractsByID -> ContractsByID
@@ -19,41 +19,37 @@ doContractInheritance contracts contract =
     combineContracts cIDs = foldr1 combine . NonEmpty.map (contracts Map.!)
   
 getInheritsList :: ContractsByID -> SolidityContract -> [ContractID]
-getInheritsList contracts c{contractInheritancePaths = UnresolvedBases l} = map lookupName l
+getInheritsList contracts contract = map lookupName $ contractInherits contract
   where
     lookupName cN = Map.findWithDefault (theError cN) (ContractID f cN) contracts
     theError cN = error $ "Invalid base name " ++ show cN ++ " in contract " ++ show n
-    ContractID{contractRealFile = f, contractRealName = n} = contractID c 
-
-getInheritsList _ = error $ "Inheritance paths constructor should be UnresolvedBases"
+    ContractID{contractRealFile = f, contractRealName = n} = contractID contract
 
 combine :: SolidityContract -> SolidityContract -> SolidityContract
 combine c1 c2 = 
   Contract {
     contractID = contractID c1,
-    contractOwnDeclarations = contractOwnDeclarations c1,
-    contractAllDeclarations = contractOwnDeclarations c1 : contractAllDeclarations c2,
-    contractInheritancePaths = contractInheritancePaths c1, -- Computed separately
+    -- Derived contracts have later storage locations, i.e. come first
+    contractStorageVars = contractStorageVars c2 ++ contractStorageVars c1,
+    contractDeclarationsByID = (combineDecls `on` contractDeclarationsByID) c1 c2,
+    contractDeclarationsByName = (combineDecls `on` contractDeclarationsByName) c1 c2,
+    contractLibraryTypes = (Map.unionWith Set.union `on` contractLibraryTypes) c1 c2,
+    contractInherits = contractInherits c1,
+    contractIsConcrete = 
+      contractIsConcrete c1 && (
+        contractIsConcrete c2 ||
+        all funcHasCode $ declaredFuncs $ contractDeclarationsByName c2
+        )
     contractIsLibrary = contractIsLibrary c1
   }
 
-makeInheritancePaths :: ContractsByID -> ContractsByID
-makeInheritancePaths contracts = result
-  where result = Map.map (makeContractInheritancePaths result) contracts
-
-makeContractInheritancePaths :: ContractsByID -> SolidityContract -> SolidityContract
-makeContractInheritancePaths contracts c{contractID = cID} =
-  c{contractInheritancePaths = makeInheritanceMap contracts cID $ contractInheritancePaths c}
-
-makeInheritanceMap :: ContractsByID -> ContractID -> InheritanceMap -> InheritanceMap
-makeInheritanceMap contracts cID (UnresolvedBases bs) = 
-  InheritanceMap{inheritanceLeaf = cID, inheritanceBases = map getInheritanceMap bs}
-  where
-    getInheritanceMap b = (theCID b, contractInheritancePaths $ lookupName b contracts)
-    lookupName b = Map.findWithDefault (theError b) $ theCID b
-    theError cN = error $ "Invalid base name " ++ show cN ++ " in contract " ++ show n 
-    theCID b = ContractID f b
-    ContractID{contractRealFile = f, contractRealName = n} = cID 
-
-makeInheritanceMap _ _ _ = error $ "Inheritance paths constructor should be UnresolvedBases"
+combineDecls :: ContractDeclarations a -> ContractDeclarations a -> ContractDeclarations a
+combineDecls d1 d2 =
+  Declarations {
+    declaredvars = declaredVars d1 `Map.union` declaredVars d2,
+    declaredFuncs = declaredFuncs d1 `Map.union` declaredFuncs d2,
+    declaredEvents = declaredEvents d1 `Map.union` declaredEvents d2,
+    declaredModifiers = declaredModifiers d1 `Map.union` declaredModifiers d2,
+    declaredTypes = declaredTypes d1 `Map.union` declaredTypes d2
+  }
 
