@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module Types where
 
+import Data.List
 import Data.Maybe
 import Text.Parsec
 
@@ -20,22 +21,22 @@ simpleType =
   bytes' <|>
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
-  (try $ do
-    libName <- identifier
-    dot
-    libType <- identifier
-    addLibraryType libName libType
-    return $ Typedef {
-      typedefName = libType,
-      typedefLibrary = Just libName
-    }) <|>
   (do
-    typeName <- identifier
+    qualifiedName <- identifierPath
+    let typeName = last qualifiedName
+    defaultTypeID <- makeDeclID typeName
+    let typePath = init qualifiedName
+    realTypeID <-
+      if null typePath
+      then return defaultTypeID
+      else do 
+        addExternalName (typePath, typeName),
+        return defaultTypeID{declContract = last typePath}
     return $ Typedef {
-      typedefName = typeName,
-      typedefLibrary = Nothing
-    })
-
+      typedefPath = typePath,
+      typedefTypeID = realTypeID
+      }
+  )
   where
     simple name nameType = do
       reserved name

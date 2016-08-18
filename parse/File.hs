@@ -23,8 +23,7 @@ solidityFile fileName = do
         eitherContract = Left <$> (solidityContract fileName >> getState)
     eitherImport <|> eitherContract
   eof
-  let (contracts, imports) = partitionEithers toplevel
-      contractsAssoc = map (\c -> (contractRealName $ contractID c, c)) contracts
+  let (contractsAssoc, imports) = partitionEithers toplevel
   return SolidityFile {
     fileContracts = fromList contractsAssoc,
     fileImports = imports

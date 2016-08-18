@@ -17,11 +17,7 @@ solidityContract :: FileName -> SolidityParser ()
 solidityContract fileName = do
   isLibrary <- (reserved "contract" >> return False) <|> (reserved "library" >> True)
   name <- identifier
-  initContract ContractID{
-    contractRealFile = fileName,
-    contractRealName = name
-    }
-  setLibrary isLibrary
+  initContract name isLibrary
   optional $ do
     reserved "is"
     commaSep1 $ do
@@ -55,28 +51,23 @@ structDeclaration = do
   structFields <- braces $ many1 $ do
     decl <- simpleVariableDeclaration
     semi
-    return decl
-  addType $ TypeDef {
-    typeID = structName,
-    typeDecl = Struct { fields = structFields }
-    }
+    return $ toFieldDef decl
+  addType structName Struct{ fields = structFields }
 
 enumDeclaration :: SolidityParser ()
 enumDeclaration = do
   reserved "enum"
   enumName <- identifier
   enumFields <- braces $ commaSep1 identifier
-  addType $ TypeDef {
-    typeID = enumName,
-    typeDecl = Enum { names = enumFields}
-    }
+  addType enumName Enum{ names = enumFields }
 
 -- This one has no type-level effect, so we don't have to do anything
 usingDeclaration :: SolidityParser ()
 usingDeclaration = do
   reserved "using"
-  reserved "for"
   identifier
+  reserved "for"
+  identifierPath
   semi
   return ()
 
@@ -84,20 +75,20 @@ usingDeclaration = do
 
 variableDeclaration :: SolidityParser ()
 variableDeclaration = do
-  vDecl <- simpleVariableDeclaration
-  vDefn <- optionMaybe $ do
+  (vName, vDecl) <- simpleVariableDeclaration
+  optional $ do
     reservedOp "="
     many $ noneOf ";"
   semi
-  addVar $ maybe vDecl (\vD -> vDecl{varAssignment = vD}) vDefn
+  guard (not $ null vName) $ fail "State variable name may not be empty"
+  addVar vName vDecl
 
-simpleVariableDeclaration :: SolidityParser SolidityVarDef
+simpleVariableDeclaration :: SolidityParser (Identifier, SolidityVarDef)
 simpleVariableDeclaration = do
   variableType <- simpleTypeExpression
   typeMaker <- variableModifiers
   variableName <- option "" identifier
-  cID <- getContractID
-  return $ typeMaker variableName variableType
+  return $ (variableName, typeMaker variableType)
 
 {- Functions and function-like -}
 
@@ -108,7 +99,7 @@ functionDeclaration = do
   args <- tupleDeclaration
   objMaker <- functionModifiers
   functionBody <- bracedCode <|> (semi >> return "")
-  addFunc $ (objMaker name args){funcHasCode = not $ null functionBody}
+  addFunc name $ objMaker args functionBody
 
 eventDeclaration :: SolidityParser ()
 eventDeclaration = do
@@ -117,8 +108,7 @@ eventDeclaration = do
   logs <- tupleDeclaration
   isAnon <- option False $ reserved "anonymous" >> return True
   semi
-  addEvent $ EventDef {
-    eventID = name,
+  addEvent name $ EventDef {
     eventTopics = logs,
     eventIsAnonymous = isAnon
     }
@@ -129,8 +119,7 @@ modifierDeclaration = do
   name <- identifier
   args <- option (TupleValue []) tupleDeclaration
   defn <- bracedCode
-  addModifier $ ModifierDef {
-    modID = name,
+  addModifier name $ ModifierDef {
     modArgs = args,
     modDefn = defn
     }
@@ -138,7 +127,7 @@ modifierDeclaration = do
 {- Not really declarations -}
 
 tupleDeclaration :: SolidityParser SolidityTuple
-tupleDeclaration = fmap TupleValue $ parens $ commaSep $ simpleVariableDeclaration
+tupleDeclaration = fmap TupleValue $ parens $ commaSep $ toArgDef <$> simpleVariableDeclaration
 
 visibilityModifier :: SolidityParser SolidityVisibility
 visibilityModifier =
@@ -154,28 +143,25 @@ storageModifier =
   (reserved "memory" >> return MemoryStorage) <|>
   (reserved "indexed" >> return IndexedStorage)
 
-variableModifiers :: SolidityParser (Identifier -> SolidityBasicType -> SolidityVarDef)
+variableModifiers :: SolidityParser (SolidityBasicType -> SolidityVarDef)
 variableModifiers =
   permute $ (\v s ->
-    \name variableType -> VarDef {
-      varID = name,
+    \variableType -> VarDef {
       varType = variableType,
-      varAssignment = "",
       varVisibility = v,
       varStorage = s
     }) <$?>
     (InternalVisible, visibilityModifier) <|?>
     (StorageStorage, storageModifier)
 
-functionModifiers :: SolidityParser (Identifier -> SolidityTuple -> SolidityFuncDef)
+functionModifiers :: SolidityParser (SolidityTuple -> SourceCode -> SolidityFuncDef)
 functionModifiers =
   permute $ (\r v s _ _ _ _ ->
-    \name args -> FuncDef {
-      funcID = name,
+    \args code -> FuncDef {
       funcValueType = r,
       funcArgType = args,
-      funcDefn = "",
       funcVisibility = v,
+      funcHasCode = not $ null code,
       funcIsConstant = case s of {ValueStorage -> True; _ -> False}
     }) <$?>
     (TupleValue [], returnModifier) <|?>

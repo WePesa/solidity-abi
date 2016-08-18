@@ -1,96 +1,132 @@
+{-# LANGUAGE NamedFieldPuns #-}
 module SolidityParser where
 
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
+import Data.Bifunctor
 import Text.Parsec
-
 import SolidityTypes
 
-type SolidityParser = Parsec SourceCode SolidityContract
+type SolidityParser = Parsec SourceCode (ContractName, SolidityContract)
 
-initContract :: ContractID -> SolidityParser ()
-initContract cID = putState $ emptyContract cID
+initContract :: ContractName -> Bool -> SolidityParser ()
+initContract name isLibrary = 
+  putState (name, emptyContract{contractIsLibrary = isLibrary})
 
-addVar :: SolidityVarDef -> SolidityParser ()
-addVar v = modifyState $
-  \c@Contract{contractDeclarationsByID = cDIs, contractDeclarationsByName = cDNs} =
-    c@Contract{
-      contractStorageVars = 
-        case varStorage v of
-          StorageStorage -> varID v:contractStorageVars c
-          _ -> contractStorageVars c,
-      contractDeclarationsByID = cDIs{declaredVars = Map.insert (varID v) v $ declaredVars cDIs},
-      contractDeclarationsByName = cDNs{declaredVars = Map.insert (declarationRealName $ varID v) v $ declaredVars cDNs}
-      }
+makeDeclID :: Identifier -> SolidityParser DeclID
+makeDeclID id = do
+  (name, _) <- getState
+  return DeclId{
+    declContract = name,
+    declName = id
+    }
 
-addFunc :: SolidityFuncDef -> SolidityParser ()
-addFunc f = modifyState $
-  \c@Contract{contractDeclarationsByID = cDIs, contractDeclarationsByName = cDNs} =
-    c{
-      contractDeclarationsByID = cDIs{declaredVars = Map.insert (funcID f) f $ declaredFuncs cDIs},
-      contractDeclarationsByName = cDNs{declaredVars = Map.insert (declarationRealName $ funcID f) f $ declaredFuncs cDNs},
-      contractIsConcrete = contractIsConcrete c && funcHasCode f
-     }
+addVar :: Identifier -> SolidityVarDef -> SolidityParser ()
+addVar vName v = do
+  vID <- makeDeclID vName
+  modifyState $ second $
+    \c@Contract{contractVars@DeclarationsBy{byName, byID}, contractStorageVars} ->
+      c{byName = Map.insertWith theError vName v byName,
+        byID = Map.insertWith theError vID v byID
+        contractStorageVars =
+          case varStorage v of
+            StorageStorage -> v:contractStorageVars,
+            _ -> contractStorageVars
+       }
+  where theError = duplicateError "variable" vID
 
-addEvent :: SolidityEventDef -> SolidityParser ()
-addEvent e = modifyState $ 
-  \c@Contract{contractDeclarationsByID = cDIs, contractDeclarationsByName = cDNs} =
-    c{
-      contractDeclarationsByID = cDIs{declaredVars = Map.insert (eventID e) e $ declaredEvents cDIs},
-      contractDeclarationsByName = cDNs{declaredVars = Map.insert (declarationRealName $ eventID e) e $ declaredEvents cDNs}
-     }
+addFunc :: Identifier -> SolidityFuncDef -> SolidityParser ()
+addFunc fName f = do
+  fID <- makeDeclID fName
+  modifyState $ second $
+    \c@Contract{contractFuncs@DeclarationsBy{byName, byID}} ->
+      c{byName = Map.insertWith (declName fName) f byName,
+        byID = Map.insertWith theError fID f byID
+       }
+  where 
+    theError =
+      error $ "Duplicate definition of " ++ (
+                if null $ declName fID
+                then "default function"
+                else "function " ++ declName fID
+              ) ++ " in contract " ++ declContract fID
 
-addModifier :: SolidityModifierDef -> SolidityParser ()
-addModifier m = modifyState $
-  \c@Contract{contractDeclarationsByID = cDIs, contractDeclarationsByName = cDNs} =
-    c{
-      contractDeclarationsByID = cDIs{declaredModifiers = Map.insert (modID m) m $ declaredModifiers cDIs},
-      contractDeclarationsByName = cDNs{declaredModifiers = Map.insert (declarationRealName $ declaredModifiers m) m $ declaredModifiers cDNs}
-     }
+addEvent :: Identifier -> SolidityEventDef -> SolidityParser ()
+addEvent eName e = do
+  eID <- makeDeclID eName
+  modifyState $ second $
+    \c@Contract{contractEvents@DeclarationsBy{byName, byID}} ->
+      c{byName = Map.insertWith theError (declName eName) e byName,
+        byID = Map.insertWith theError eID e byID}
+  where theError = duplicateError "event" eID
 
-addType :: SolidityTypeDef -> SolidityParser ()
-addType t = modifyState $
-  \c@Contract{contractDeclarationsByID = cDIs, contractDeclarationsByName = cDNs} =
-    c{
-      contractDeclarationsByID = cDIs{declaredTypes = Map.insert (typeID t) t $ declaredTypes cDIs},
-      contractDeclarationsByName = cDNs{declaredTypes = Map.insert (declarationRealName $ declaredTypes t) t $ declaredTypes cDNs}
-     }
+addModifier :: Identifier -> SolidityModifierDef -> SolidityParser ()
+addModifier mName m = do
+  mID <- makeDeclID mName
+  modifyState $ second $
+    \c@Contract{contractModifiers@DeclarationsBy{byName, byID}} ->
+      c{byName = Map.insertWith theError (declName mName) m byName,
+        byID = Map.insertWith theError mID m byID}
+  where theError = duplicateError "modifier" mID
+
+addType :: Identifier -> SolidityTypeDef -> SolidityParser ()
+addType tName t = do
+  tID <- makeDeclID tName
+  modifyState $ second $
+    \c@Contract{contractTypes@DeclarationsBy{byName, byID}} ->
+      c{byName = Map.insertWith (declName tName) t byName,
+        byID = Map.insertWith tID t byID}
+  where theError = duplicateError "type" tID
 
 addLibraryType :: ContractName -> Identifier -> SolidityParser ()
-addLibraryType n t = modifyState $
-  \c@Contract{contractLibraryTypes = lts} =
-    c{ contractLibraryTypes = Map.alter (maybe (Just Set.empty) (Just . Set.insert t)) n lts } 
-addBase :: ContractName -> SolidityParser ()
-addBase n = modifyState $
-  \c = c{contractInherits = x : contractInherits c}
+addLibraryType lName tName = modifyState $ second $
+  \c -> c@{contractLibraryTypes = Set.insert tID $ contractLibraryTypes c}
+  where tID = DeclID {declContract = lName, declName = tName}
 
-setIsLibrary :: Bool -> SolidityParser ()
-setIsLibrary b = modifyState $ \c -> c{contractIsLibrary = b}
+addBase :: ContractName -> SolidityParser ()
+addBase n = modifyState $ second $
+  \c -> c{contractInherits = x : contractInherits c}
+
+addExternalName :: ([ContractName], Identifier) -> SolidityParser ()
+addExternalName pathname = modifyState $ second $
+  \c -> c{contractExternalNames = Set.insert pathName $ contractExternalNames c}
 
 getIsAbstract :: SolidityParser Bool
-getIsAbstract = not . contractIsConcrete <$> getState
+getIsAbstract = not . contractIsConcrete . snd <$> getState
 
-emptyContract :: ContractID -> SolidityContract
-emptyContract cID = 
+duplicateError :: String -> DeclID -> a
+duplicateError name id =
+  error $ "Duplicate definition of " ++ name ++ declID id ++ " in contract " ++ declContract id
+
+emptyContract :: SolidityContract
+emptyContract = 
   Contract {
-    contractID = cID,
     contractStorageVars = [],
-    contractDeclarationsByID = emptyDeclarations,
-    contractDeclarationsByName = emptyDeclarations,
+    contractVars = emptyDeclsBy,
+    contractFuncs = emptyDeclsBy,
+    contractEvents = emptyDeclsBy,
+    contractModifiers = emptyDeclsBy,
+    contractTypes = emptyDeclsBy,
+    contractExternalNames = Set.empty,
+    contractLibraryTypes = Set.empty,
     contractInherits = [],
-    contractLibraryTypes = Map.empty,
     contractIsConcrete = True,
     contractIsLibrary = False
     }
 
-emptyDeclarations :: SolidityDeclarations a
-emptyDeclarations =
-  Declarations {
-    declaredVars = Map.empty,
-    declaredFuncs = Map.empty,
-    declaredEvents = Map.empty,
-    declaredModifiers = Map.empty,
-    declaredTypes = Map.empty
+emptyDeclsBy :: DeclarationsBy a
+emptyDeclsBy =
+  DeclarationsBy {
+    byName = Map.empty,
+    byID = Map.empty
     }
+
+toArgDef :: (Identifier, SolidityVarDef) -> SolidityArgDef
+toArgDef name VarDef{varType, varStorage} =
+   ArgDef{argName = name, argType = varType, argStorage = varStorage}
+
+toFieldDef :: (Identifier, SolidityVarDef) -> SolidityFieldDef
+toFieldDef name VarDef{varType} =
+  FieldDef{fieldName = name, fieldType = varType}
 

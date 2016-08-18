@@ -7,49 +7,34 @@ import qualified Data.Map as Map
 import SolidityTypes
 import C3
 
-doInheritance :: ContractsByID -> ContractsByID
-doInheritance contracts =
-  makeInheritancePaths contracts $ Map.map (doContractInheritance contracts) files
-
-doContractInheritance :: ContractsByID -> SolidityContract -> SolidityContract
-doContractInheritance contracts contract =
-  Map.map combineContracts $ c3Linearize inheritMap
-  where
-    inheritMap = Map.map (getInheritsList files) contracts
-    combineContracts cIDs = foldr1 combine . NonEmpty.map (contracts Map.!)
-  
-getInheritsList :: ContractsByID -> SolidityContract -> [ContractID]
-getInheritsList contracts contract = map lookupName $ contractInherits contract
-  where
-    lookupName cN = Map.findWithDefault (theError cN) (ContractID f cN) contracts
-    theError cN = error $ "Invalid base name " ++ show cN ++ " in contract " ++ show n
-    ContractID{contractRealFile = f, contractRealName = n} = contractID contract
+doInheritance :: ContractsByName -> ContractsByName
+doInheritance contracts = 
+  Map.map combineContracts $ c3Linearize $ Map.map contractInherits contracts
+  where combineContracts = foldr1 combine . NonEmpty.map (contracts Map.!)
 
 combine :: SolidityContract -> SolidityContract -> SolidityContract
 combine c1 c2 = 
   Contract {
-    contractID = contractID c1,
+    contractVars = (combineDeclsBy `on` contractVars) c1 c2,
+    contractFuncs = (combineDeclsBy `on` contractFuncs) c1 c2,
+    contractEvents = (combineDeclsBy `on` contractEvents) c1 c2,
+    contractModifiers = (combineDeclsBy `on` contractModifiers) c1 c2,
+    contractTypes = (combineDeclsBy `on` contractTypes) c1 c2,
     -- Derived contracts have later storage locations, i.e. come first
     contractStorageVars = contractStorageVars c2 ++ contractStorageVars c1,
-    contractDeclarationsByID = (combineDecls `on` contractDeclarationsByID) c1 c2,
-    contractDeclarationsByName = (combineDecls `on` contractDeclarationsByName) c1 c2,
-    contractLibraryTypes = (Map.unionWith Set.union `on` contractLibraryTypes) c1 c2,
     contractInherits = contractInherits c1,
-    contractIsConcrete = 
-      contractIsConcrete c1 && (
-        contractIsConcrete c2 ||
-        all funcHasCode $ declaredFuncs $ contractDeclarationsByName c2
-        )
+    contractExternalNames = (Set.union `on` contractExternalNames) c1 c2,
+    contractLibraryTypes = (Set.union `on` contractLibraryTypes) c1 c2,
+    contractIsConcrete = all funcHasCode $ declaredFuncs $ contractDeclarationsByName c2,
     contractIsLibrary = contractIsLibrary c1
   }
 
-combineDecls :: ContractDeclarations a -> ContractDeclarations a -> ContractDeclarations a
-combineDecls d1 d2 =
-  Declarations {
-    declaredvars = declaredVars d1 `Map.union` declaredVars d2,
-    declaredFuncs = declaredFuncs d1 `Map.union` declaredFuncs d2,
-    declaredEvents = declaredEvents d1 `Map.union` declaredEvents d2,
-    declaredModifiers = declaredModifiers d1 `Map.union` declaredModifiers d2,
-    declaredTypes = declaredTypes d1 `Map.union` declaredTypes d2
-  }
+combineDeclsBy :: DeclarationsBy a -> DeclarationsBy a -> DeclarationsBy a
+combineDeclsBy d1 d2 = 
+  DeclarationsBy {
+    -- Declarations in the derived contract override those with the same
+    -- name in the base contract
+    byName = (Map.union `on` byName) d1 d2,
+    byID = (Map.union `on` byID) d1 d2
+    }
 

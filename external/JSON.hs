@@ -56,11 +56,12 @@ data ContractABI =
     contractTypesABI :: ValueMap, 
     contractLibraryTypesABI :: Map ContractName ValueMap,
     contractConstrABI :: ValueMap,
+    contractIsConcreteABI :: Bool,
     contractLibraryABI :: Bool
     }
 
 instance ToJSON ContractABI where
-  toJSON (ContractABI v f e t tL c l) = object $ 
+  toJSON (ContractABI v f e t tL c _ l) = object $ 
     (nonempty' (pair "vars") v) ++
     (nonempty' (pair "funcs") f) ++
     (nonempty' (pair "events") e) ++
@@ -81,7 +82,8 @@ parseToJSON fileName sources = do
   return $ toJSON $ toFileMap results Map.! fileName
 
 toFileMap :: Map ContractID ContractABI -> Map FileName (Map ContractName ContractABI)
-toFileMap = Map.map Map.fromList . Map.fromList . makeIDAssocs
+toFileMap =
+  Map.map (Map.filter contractIsConcreteABI . Map.fromList) . Map.fromList . makeIDAssocs
   where
     makeIDAssocs = Map.foldrWithKey (\cID c l -> makeIDAssoc cID c : l) []
     makeIDAssoc cID c = (contractRealFile cID, (contractRealName cID, c))
@@ -96,6 +98,7 @@ contractABI allABI allLayouts name layout contract =
     contractTypesABI = typesABI typesL types,
     contractLibraryTypesABI = libTypesABI allABI lTypes,
     contractConstrABI = constrABI name funcs,
+    contractIsConcreteABI = contractIsConcrete contract,
     contractLibraryABI = contractIsLibrary contract
     }
   where

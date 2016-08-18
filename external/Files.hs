@@ -47,18 +47,27 @@ convertQualifyError m (LocalNameMissing x k) = MissingSymbol m k x
 convertQualifyError m (GlobalNameMissing x) = MissingImport m x
 convertQualifyError m (LocalNameDuplicate x k) = DuplicateSymbol m x k
 
-doImports :: Map FileName SolidityFile -> Either ImportError ContractsByID
+doImports :: Map FileName SolidityFile -> Either ImportError ContractsByName
 doImports files = do
   files' <- fixAllPaths files
   validateImports files'
   let resolved = resolveImports resolved files' 
-  return $ makeContractIDMap resolved
+  return $ makeLibraryTypes $ makeContractIDMap resolved
 
-makeContractIDMap :: Map FileName SolidityContracts -> ContractsByID
+makeContractIDMap :: Map FileName SolidityContracts -> ContractsByName
 makeContractIDMap contracts = 
   Map.foldr Map.union Map.empty $ Map.map $ 
   Map.foldrWithKey insertContractID Map.empty contracts
   where insertContractID cName c = Map.insert (contractID c) c
+
+makeLibraryTypes :: ContractsByName -> ContractsByName
+makeLibraryTypes contracts = Map.mapWithKey filterExternalNames contracts
+  where
+    filterExternalNames cName c =
+      c{contractLibraryTypes =
+        Set.map makeDeclID Set.filter isLibrary $ contractExternalNames c}
+    makeDeclID (_, name) = DeclID{declContract = cName, declName = name}
+
 
 resolveImports :: Map FileName SolidityContracts ->
                   Map FileName SolidityFile ->

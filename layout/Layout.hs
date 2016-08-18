@@ -40,7 +40,7 @@ doTypeLayout (Enum names)  =
     typeUsedBytes = ceiling $ logBase (256::Double) $ fromIntegral $ length names
     }
 doTypeLayout (Struct fields) = do
-  fieldsLayout <- doVarsLayout fields
+  fieldsLayout <- doVarTypesLayout fields
   let lastEnd = varEndBytes $ fieldsLayout Map.! varName (last fields)
   return $ StructLayout {
     structFieldsLayout = fieldsLayout,
@@ -49,9 +49,12 @@ doTypeLayout (Struct fields) = do
 
 doVarsLayout :: [DeclarationID] -> Map DeclarationID SolidityVarDef ->
                 LayoutReader SolidityVarsLayout
-doVarsLayout varDefs varIDs = do
+doVarsLayout varDefs varIDs = doVarTypesLayout $ map (varType . (varDefs Map.!)) varIDs
+
+doVarTypesLayout :: [SolidityBasicType] -> LayoutReader SolidityVarsLayout
+doVarTypesLayout varTs = do
   -- vars are listed from high storage to low; we work from the right
-  varsL <- foldr (\v vLs -> makeNextVarL v vLs) (return []) $ map (varDefs Map.!) varIDs
+  varsL <- foldr (\v vLs -> makeNextVarL v vLs) (return []) varTs 
   return $ makeVarsMap varsL
   where
     makeVarsMap vLs = Map.fromList $ zipWith (\v vL -> (varName v, vL)) vars vLs
@@ -65,9 +68,9 @@ doVarsLayout varDefs varIDs = do
     isStorage VarDef{varStorage = StorageStorage} = True
     isStorage _ = False
 
-doVarLayout :: StorageBytes -> SolidityVarDef -> LayoutReader SolidityVarLayout
-doVarLayout lastOffEnd var = do
-  tUsed <- usedBytes $ varType var
+doVarLayout :: StorageBytes -> SolidityBasicType -> LayoutReader SolidityVarLayout
+doVarLayout lastOffEnd varT = do
+  tUsed <- usedBytes varT
   let startBytes = nextLayoutStart lastOffEnd tUsed
   return $ VarLayout {
     varStartBytes = startBytes,
