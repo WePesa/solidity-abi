@@ -53,7 +53,7 @@ pretty typesL (Mapping d c) =
   text "mapping" <+> (parens $ pretty typesL d <+> text "=>" <+> pretty typesL c)
 pretty typesL (Typedef name) = 
   case typesL Map.! name of
-    ContractLayout{} -> pretty typesL Address
+    ContractTLayout{} -> pretty typesL Address
     EnumLayout s -> pretty typesL (UnsignedInt s)
     _ -> text name
 
