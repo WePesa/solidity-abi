@@ -53,7 +53,8 @@ pretty allTypesL dID (Mapping d c) =
   text "mapping" <+> (parens $ pretty allTypesL dID d <+> text "=>" <+> pretty allTypesL dID c)
 pretty allTypesL dID{declarationContract = cID} (Typedef name libM) = 
   case allTypesL Map.! (maybe dID (\l -> dID{declarationContract = cID{contractRealName = l} }) libM){declarationRealName = name} of
-    EnumLayout s -> pretty typesL allTypesL (UnsignedInt s)
+    ContractTLayout{} -> pretty allTypesL Address
+    EnumLayout s -> pretty allTypesL (UnsignedInt s)
     _ -> text name
 
 natural = integer . toInteger
