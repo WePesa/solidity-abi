@@ -5,7 +5,7 @@ import Numeric.Natural
 
 import SolidityTypes
 
-type SolidityContractsLayout = Map ContractID SolidityContractLayout
+type SolidityContractsLayout = Map ContractName SolidityContractLayout
 type SolidityTypesLayout = Map DeclarationID SolidityTypeLayout
 type SolidityVarsLayout = Map DeclarationID SolidityVarLayout
 

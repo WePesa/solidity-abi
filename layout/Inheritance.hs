@@ -8,12 +8,13 @@ import SolidityTypes
 import C3
 
 doInheritance :: ContractsByName -> ContractsByName
-doInheritance contracts = 
-  Map.map combineContracts $ c3Linearize $ Map.map contractInherits contracts
-  where combineContracts = foldr1 combine . NonEmpty.map (contracts Map.!)
+doInheritance contracts = result
+  where 
+    result = Map.map combineContracts $ c3Linearize $ Map.map contractInherits contracts
+    combineContracts = foldr (combine result) emptyContract . NonEmpty.map (contracts Map.!)
 
-combine :: SolidityContract -> SolidityContract -> SolidityContract
-combine c1 c2 = 
+combine :: ContractsByName -> SolidityContract -> SolidityContract -> SolidityContract
+combine contracts c1 c2 = 
   Contract {
     contractVars = (combineDeclsBy `on` contractVars) c1 c2,
     contractFuncs = (combineDeclsBy `on` contractFuncs) c1 c2,
@@ -23,11 +24,17 @@ combine c1 c2 =
     -- Derived contracts have later storage locations, i.e. come first
     contractStorageVars = contractStorageVars c2 ++ contractStorageVars c1,
     contractInherits = contractInherits c1,
-    contractExternalNames = (Set.union `on` contractExternalNames) c1 c2,
-    contractLibraryTypes = (Set.union `on` contractLibraryTypes) c1 c2,
+    contractExternalNames = checkExternalNames c1 `Set.union` contractExternalNames c2,
+    contractLibraryTypes = checkLibraryTypes c1 `Set.union` contractLibraryTypes c2,
     contractIsConcrete = all funcHasCode $ declaredFuncs $ contractDeclarationsByName c2,
     contractIsLibrary = contractIsLibrary c1
   }
+
+  where
+    checkExternalNames = 
+      Set.map (checkExternalName contracts c1) . contractExternalNames
+    newLibraryTypes = 
+      Set.map makeID . Set.filter (isLibraryType contracts) . contractExternalNames 
 
 combineDeclsBy :: DeclarationsBy a -> DeclarationsBy a -> DeclarationsBy a
 combineDeclsBy d1 d2 = 
@@ -38,3 +45,26 @@ combineDeclsBy d1 d2 =
     byID = (Map.union `on` byID) d1 d2
     }
 
+checkExternalName :: ContractsByName -> SolidityContract ->
+                     ([ContractName], Identifier) -> ([ContractName], Identifier)
+checkExternalName _ _ ([], name) =
+  error $ "Empty contract qualifier in external name " ++ name
+checkExternalName contracts c x@([cName], name) =
+  | cName `elem` contractInherits c &&
+    name `Map.member` (byName $ contractTypes $ contracts Map.! cName) 
+    = x
+  | otherwise
+    = error $ "Type " ++ name ++ " not visible in contract " ++ cName
+checkExternalName contracts _ x@(cName:rest, name) =
+  checkExternalName contracts (contracts Map.! cName) (rest,name) `seq` x
+ 
+checkLibraryType :: ContractsByName -> 
+                    ([ContractName], Identifier) -> ([ContractName], Identifier)
+checkLibraryType _ ([], name) = 
+  error $ "Empty contract qualifier when checking library type " ++ name
+checkLibraryType contracts x@([cName], name) =
+  Map.findWithDefault False cName $ Map.map contractIsLibrary contracts 
+
+makeID :: ([ContractName], Identifier) -> DeclID
+makeID ([cName], name) = DeclID{ declContract = cName, declName = name}
+makeID _ = error $ "Too many qualifiers in library name"

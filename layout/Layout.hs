@@ -9,21 +9,21 @@ import SolidityTypes
 import LayoutTypes
 import DAG
 
-type LayoutReader = Reader (ContractID, SolidityContractsLayout)
+type LayoutReader = Reader SolidityContractsLayout
 
-doContractLayouts :: ContractsByID -> SolidityContractsLayout
+doContractLayouts :: ContractsByName -> SolidityContractsLayout
 doContractLayouts contracts = either (error "Library layout error") id $ do
   validateLibraries contracts
-  let result = Map.mapWithKey (\cID c -> runReader (doContractLayout c) (cID,result)) contracts
+  let result = Map.map (\c -> runReader (doContractLayout c) result) contracts
   return result
 
-validateLibraries :: ContractsByID -> Either (DAGError ContractName) ()
+validateLibraries :: ContractsByName -> Either (DAGError ContractName) ()
 validateLibraries contracts = 
   checkDAG $ Map.map (Map.keys . contractLibraryTypes) contracts
 
 doContractLayout :: SolidityContract -> LayoutReader SolidityContractLayout
 doContractLayout contract = do
-  varsL <- doVarsLayout (declaredVars $ contractDeclarationsByID contract) (contractVars contract)
+  varsL <- doVarsLayout (byID $ contractVars contract) (contractStorageVars contract)
   typesL <- doTypesLayout $ contractTypes contract
   return $ ContractLayout {
     varsLayout = varsL,
@@ -31,8 +31,8 @@ doContractLayout contract = do
     layoutIsLibrary = contractIsLibrary contract
     }
 
-doTypesLayout :: SolidityTypes -> LayoutReader SolidityTypesLayout
-doTypesLayout types = sequence $ Map.map (doTypeLayout . typeDecl) types
+doTypesLayout :: Map DeclID SolidityTypeDef -> LayoutReader SolidityTypesLayout
+doTypesLayout types = sequence $ Map.map (doTypeLayout . byID) types
 
 doTypeLayout :: SolidityNewType -> LayoutReader SolidityTypeLayout
 doTypeLayout (Enum names)  =
@@ -47,8 +47,7 @@ doTypeLayout (Struct fields) = do
     typeUsedBytes = nextLayoutStart lastEnd keyBytes
     }
 
-doVarsLayout :: [DeclarationID] -> Map DeclarationID SolidityVarDef ->
-                LayoutReader SolidityVarsLayout
+doVarsLayout :: Map DeclID SolidityVarDef -> [DeclID] -> LayoutReader SolidityVarsLayout
 doVarsLayout varDefs varIDs = doVarTypesLayout $ map (varType . (varDefs Map.!)) varIDs
 
 doVarTypesLayout :: [SolidityBasicType] -> LayoutReader SolidityVarsLayout
@@ -97,31 +96,21 @@ usedBytes t = case t of
     return $ keyBytes * numKeys
   DynamicArray _ -> return keyBytes
   Mapping _ _ -> return keyBytes
-  Typedef name libM -> typeUsedBytes <$> findTypedef name libM
+  Typedef typeID -> typeUsedBytes <$> findTypedef typeID
 
-findTypedef :: Identifier -> Maybe ContractName -> LayoutReader SolidityTypeLayout
-findTypedef name libM = do
-  (cID, contractsL) <- ask
-  let
-    contractL = contractsL Map.! cID
-    notFound =
-      error $ "Type " ++ name ++
-              " not a contract nor found in contract " ++ contractRealName cID ++
-              maybe "" (" nor in library or base contract " ++) libM
-  return $ either id id $ do
-    findOrContinue name contractL
-    if cID{realContractName = name} `elem` Map.keys contractsL
-    then Left $ ContractTLayout addressBytes
-    else Right()
-    lib <- maybe notFound Right libM
-    library <- maybe (error $ "No such library: " ++ lib) Right $
-               Map.lookup cID{realContractName = lib} contractsL
-    when (not $ layoutIsLibrary library) $ error $ "Not a library: " ++ lib
-    findOrContinue name library
-    notFound
+findTypedef :: DeclID -> LayoutReader SolidityTypeLayout
+findTypedef typeID = do
+  contractsL <- ask
+  let typesL = Map.foldr Map.union Map.empty $ Map.map typesLayout contractsL
+  return $ (\f k m def -> f def k m) 
+    Map.findWithDefault typeID typesL $
+    Map.findWithDefault theError (declContract typeID) contractsL `seq`
+    contractTLayout addressBytes
 
-  where
-    findOrContinue n c = maybe (Right ()) Left $ Map.lookup name $ declaredTypes $ contractDeclarationsByName c
+  where 
+    theError = error $ "Couldn't find type " ++ declName typeID ++
+                       " in contract " ++ declContract typeID ++
+                       " nor as a contract type."
 
 nextLayoutStart :: StorageBytes -> StorageBytes -> StorageBytes
 nextLayoutStart 0 _ = 0

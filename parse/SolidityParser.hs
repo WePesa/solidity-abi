@@ -79,11 +79,6 @@ addType tName t = do
         byID = Map.insertWith tID t byID}
   where theError = duplicateError "type" tID
 
-addLibraryType :: ContractName -> Identifier -> SolidityParser ()
-addLibraryType lName tName = modifyState $ second $
-  \c -> c@{contractLibraryTypes = Set.insert tID $ contractLibraryTypes c}
-  where tID = DeclID {declContract = lName, declName = tName}
-
 addBase :: ContractName -> SolidityParser ()
 addBase n = modifyState $ second $
   \c -> c{contractInherits = x : contractInherits c}
@@ -98,29 +93,6 @@ getIsAbstract = not . contractIsConcrete . snd <$> getState
 duplicateError :: String -> DeclID -> a
 duplicateError name id =
   error $ "Duplicate definition of " ++ name ++ declID id ++ " in contract " ++ declContract id
-
-emptyContract :: SolidityContract
-emptyContract = 
-  Contract {
-    contractStorageVars = [],
-    contractVars = emptyDeclsBy,
-    contractFuncs = emptyDeclsBy,
-    contractEvents = emptyDeclsBy,
-    contractModifiers = emptyDeclsBy,
-    contractTypes = emptyDeclsBy,
-    contractExternalNames = Set.empty,
-    contractLibraryTypes = Set.empty,
-    contractInherits = [],
-    contractIsConcrete = True,
-    contractIsLibrary = False
-    }
-
-emptyDeclsBy :: DeclarationsBy a
-emptyDeclsBy =
-  DeclarationsBy {
-    byName = Map.empty,
-    byID = Map.empty
-    }
 
 toArgDef :: (Identifier, SolidityVarDef) -> SolidityArgDef
 toArgDef name VarDef{varType, varStorage} =

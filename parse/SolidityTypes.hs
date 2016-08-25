@@ -47,6 +47,29 @@ data DeclarationsBy a =
     byID :: Map DeclID a
     }
 
+emptyContract :: SolidityContract
+emptyContract = 
+  Contract {
+    contractStorageVars = [],
+    contractVars = emptyDeclsBy,
+    contractFuncs = emptyDeclsBy,
+    contractEvents = emptyDeclsBy,
+    contractModifiers = emptyDeclsBy,
+    contractTypes = emptyDeclsBy,
+    contractExternalNames = Set.empty,
+    contractLibraryTypes = Set.empty,
+    contractInherits = [],
+    contractIsConcrete = True,
+    contractIsLibrary = False
+    }
+
+emptyDeclsBy :: DeclarationsBy a
+emptyDeclsBy =
+  DeclarationsBy {
+    byName = Map.empty,
+    byID = Map.empty
+    }
+
 data DeclID = 
   DeclID {
     declContract :: ContractName,
@@ -107,7 +130,7 @@ data SolidityBasicType =
   FixedArray  { elemType :: SolidityBasicType, fixedLength :: Natural } |
   DynamicArray{ elemType :: SolidityBasicType } |
   Mapping     { domType  :: SolidityBasicType, codType :: SolidityBasicType } |
-  Typedef     { typedefPath :: [ContractName], typedefTypeID :: DeclID }
+  Typedef     { typedefTypeID :: DeclID }
   
 data SolidityNewType =
   Enum        { names  :: [Identifier] } |

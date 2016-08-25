@@ -1,4 +1,3 @@
-{-# LANGUAGE FlexibleInstances #-}
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Selector (selector) where
 
@@ -18,7 +17,7 @@ import Numeric
 import SolidityTypes
 import LayoutTypes
 
-selector :: Map ContractID SolidityTypesLayout -> DeclarationID ->
+selector :: Map ContractName SolidityTypesLayout -> DeclID ->
             Identifier -> SolidityTuple -> String
 selector allTypesL dID name args = hash4 $ signature allTypesL dID name args 
   where
@@ -27,34 +26,33 @@ selector allTypesL dID name args = hash4 $ signature allTypesL dID name args
     zeroPad [c] = ['0',c]
     zeroPad x = x
 
-signature :: Map ContractID SolidityTypesLayout -> DeclarationID ->
+signature :: Map ContractName SolidityTypesLayout -> DeclID ->
              Identifier -> SolidityTuple -> ByteString
 signature allTypesL dID name args =
-  encodeUtf8 $ T.pack $ name ++ prettyArgTypes allTypesL dID args
+  encodeUtf8 $ T.pack $ name ++ sigArgTypes allTypesL dID args
 
-prettyArgTypes ::  Map ContractID SolidityTypesLayout -> DeclarationID ->
-                  SolidityTuple -> String
-prettyArgTypes allTypesL dID (TupleValue args) =
+sigArgTypes ::  Map ContractName SolidityTypesLayout -> DeclID -> SolidityTuple -> String
+sigArgTypes allTypesL dID (TupleValue args) =
   show $ parens $ hcat $ punctuate (text ",") $
-  map (pretty allTypesL dID . varType) args
+  map (sig allTypesL dID . varType) args
 
-pretty :: Map ContractID SolidityTypesLayout -> DeclarationID ->
-          SolidityBasicType -> Doc
-pretty _ _ Boolean = text "bool"
-pretty _ _ Address = text "address"
-pretty _ _ (SignedInt s) = text "int" <> natural (s * 8)
-pretty _ _ (UnsignedInt s) = text "uint" <> natural (s * 8)
-pretty _ _ (FixedBytes s) = text "bytes" <> natural s
-pretty _ _ DynamicBytes = text "bytes"
-pretty _ _ String = text "string"
-pretty allTypesL dID (FixedArray t l) = (pretty allTypesL dID t) <> text "[" <> natural l <> text "]"
-pretty allTypesL dID (DynamicArray t) = (pretty allTypesL dID t) <> text "[]"
-pretty allTypesL dID (Mapping d c) =
-  text "mapping" <+> (parens $ pretty allTypesL dID d <+> text "=>" <+> pretty allTypesL dID c)
-pretty allTypesL dID{declarationContract = cID} (Typedef name libM) = 
-  case allTypesL Map.! (maybe dID (\l -> dID{declarationContract = cID{contractRealName = l} }) libM){declarationRealName = name} of
-    ContractTLayout{} -> pretty allTypesL Address
-    EnumLayout s -> pretty allTypesL (UnsignedInt s)
-    _ -> text name
+sig :: Map ContractName SolidityTypesLayout -> DeclID -> SolidityBasicType -> Doc
+sig _ _ Boolean = text "bool"
+sig _ _ Address = text "address"
+sig _ _ (SignedInt s) = text "int" <> natural (s * 8)
+sig _ _ (UnsignedInt s) = text "uint" <> natural (s * 8)
+sig _ _ (FixedBytes s) = text "bytes" <> natural s
+sig _ _ DynamicBytes = text "bytes"
+sig _ _ String = text "string"
+sig allTypesL dID (FixedArray t l) = (sig allTypesL dID t) <> text "[" <> natural l <> text "]"
+sig allTypesL dID (DynamicArray t) = (sig allTypesL dID t) <> text "[]"
+sig allTypesL dID (Mapping d c) =
+  text "mapping" <+> (parens $ sig allTypesL dID d <+> text "=>" <+> sig allTypesL dID c)
+sig allTypesL dID{declContract = cName} (Typedef typeID) = 
+  let typesL = Map.foldr Map.union Map.empty allTypesL
+  in case Map.lookup typeID typesL
+    Nothing  -> sig allTypesL Address -- Contract type
+    Just (EnumLayout s) -> sig allTypesL (UnsignedInt s)
+    Just _ -> text name
 
 natural = integer . toInteger

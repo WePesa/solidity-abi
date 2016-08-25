@@ -32,10 +32,7 @@ simpleType =
       else do 
         addExternalName (typePath, typeName),
         return defaultTypeID{declContract = last typePath}
-    return $ Typedef {
-      typedefPath = typePath,
-      typedefTypeID = realTypeID
-      }
+    return Typedef{ typedefTypeID = realTypeID }
   )
   where
     simple name nameType = do
