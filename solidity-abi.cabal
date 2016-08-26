@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                solidity-abi
-version:             2.0.0
+version:             3.0.0
 -- synopsis:            
 -- description:         
 license:             MIT
@@ -26,13 +26,10 @@ executable solidity-abi
   default-language:    Haskell2010
 
 library
-  exposed-modules:     Blockchain.Ethereum.Solidity.JSON
-                       Blockchain.Ethereum.Solidity.Structure
-                       Blockchain.Ethereum.Solidity.Layout
+  exposed-modules:     Blockchain.Ethereum.Solidity
   other-modules:       JSON
                        Selector
                        Layout
-                       LayoutTypes
                        Declarations
                        Expression
                        File

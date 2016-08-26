@@ -1,8 +1,6 @@
 module SolidityTypes where
 
 import Data.Map (Map)
-import Data.Set (Set)
-
 import Text.Parsec (SourceName)
 import Numeric.Natural
 
@@ -36,6 +34,10 @@ data WithPos a =
     startPos :: Natural,
     endPos :: Natural,
     stored :: a
+    } |
+  WithSize {
+    sizeOf :: Natural,
+    stored :: a
     }
 
 data SolidityContractT t =
@@ -49,8 +51,8 @@ data SolidityContractT t =
     contractStorageVars :: [t DeclID],
     -- In order of increasingly derived
     contractInherits :: [ContractName],
-    contractExternalNames :: Set ([ContractName], Identifier),
-    contractLibraryTypes :: Set DeclID,
+    contractExternalNames :: [([ContractName], Identifier)],
+    contractLibraryTypes :: [DeclID],
     contractIsConcrete :: Bool,
     contractIsLibrary :: Bool
     }
@@ -70,8 +72,8 @@ emptyContract =
     contractEvents = emptyDeclsBy,
     contractModifiers = emptyDeclsBy,
     contractTypes = emptyDeclsBy,
-    contractExternalNames = Set.empty,
-    contractLibraryTypes = Set.empty,
+    contractExternalNames = [],
+    contractLibraryTypes = [],
     contractInherits = [],
     contractIsConcrete = True,
     contractIsLibrary = False

@@ -1,4 +1,4 @@
-import Blockchain.Ethereum.Solidity.JSON
+import Blockchain.Ethereum.Solidity
 
 import qualified Data.Aeson.Encode.Pretty as Aeson
 import qualified Data.ByteString.Lazy as BS

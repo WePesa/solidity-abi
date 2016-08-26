@@ -53,18 +53,16 @@ type LayoutReader = Reader ([ContractsName], Map DeclID SolidityNewTypeABI)
 doTypeLayout :: SolidityNewType -> LayoutReader SolidityNewTypeABI
 doTypeLayout Enum{names} = 
   return Enum{
-    names = WithPos{
-      startPos = 0,
-      endPos = ceiling $ logBase (256::Double) $ fromIntegral $ length names,
+    names = WithSize{
+      sizeOf = ceiling $ logBase (256::Double) $ fromIntegral $ length names,
       stored = names
       }
     }
 doTypeLayout Struct{fields} = do
   fieldsLayout <- doVarTypesLayout fields
   return Struct{
-    fields = WithPos{
-      startPos = 0,
-      endPos = endPos $ last fieldsLayout
+    fields = WithSize{
+      sizeOf = 1 + endPos (last fieldsLayout)
       stored = zipWith makeFieldDefL fields fieldsLayout
       }
     }
@@ -122,7 +120,7 @@ usedBytes t = case t of
     return $ keyBytes * numKeys
   DynamicArray _ -> return keyBytes
   Mapping _ _ -> return keyBytes
-  Typedef typeID -> typeUsedBytes <$> findTypedef typeID
+  Typedef typeID -> sizeOf <$> findTypedef typeID -- this is defined in doTypesLayout
 
 findTypedef :: DeclID -> LayoutReader SolidityNewTypeABI
 findTypedef typeID = do

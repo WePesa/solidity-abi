@@ -1,7 +1,6 @@
 module Inheritance (doInheritance) where
 
 import qualified Data.List.NonEmpty as NonEmpty
-import qualified Data.Set as Set
 import qualified Data.Map as Map
 
 import SolidityTypes
@@ -24,17 +23,17 @@ combine contracts c1 c2 =
     -- Derived contracts have later storage locations, i.e. come first
     contractStorageVars = contractStorageVars c2 ++ contractStorageVars c1,
     contractInherits = contractInherits c1,
-    contractExternalNames = checkExternalNames c1 `Set.union` contractExternalNames c2,
-    contractLibraryTypes = checkLibraryTypes c1 `Set.union` contractLibraryTypes c2,
+    contractExternalNames = checkExternalNames c1 ++ contractExternalNames c2,
+    contractLibraryTypes = checkLibraryTypes c1 ++ contractLibraryTypes c2,
     contractIsConcrete = all funcHasCode $ declaredFuncs $ contractDeclarationsByName c2,
     contractIsLibrary = contractIsLibrary c1
   }
 
   where
     checkExternalNames = 
-      Set.map (checkExternalName contracts c1) . contractExternalNames
+      map (checkExternalName contracts c1) . contractExternalNames
     newLibraryTypes = 
-      Set.map makeID . Set.filter (isLibraryType contracts) . contractExternalNames 
+      map makeID . filter (isLibraryType contracts) . contractExternalNames 
 
 combineDeclsBy :: DeclarationsBy a -> DeclarationsBy a -> DeclarationsBy a
 combineDeclsBy d1 d2 = 
