@@ -12,6 +12,7 @@ type Identifier = String
 type ContractName = Identifier
 type SolidityFiles = Map FileName SolidityFile
 type ContractsByName = Map ContractName SolidityContract
+type ContractsABIByName = Map ContractName SolidityContractABI
 
 data SolidityFile = 
   SolidityFile {  
@@ -24,15 +25,28 @@ data ImportAs =
     StarPrefix ContractName |
     Aliases [(ContractName, ContractName)]
    
-data SolidityContract =
+type SolidityContract = SolidityContractT WithoutPos
+type SolidityContractABI = SolidityContractT WithPos
+type SolidityNewType = SolidityNewTypeT WithoutPos
+type SolidityNewTypeABI = SolidityNewType WithPos
+
+type WithoutPos a = a
+data WithPos a =
+  WithPos {
+    startPos :: Natural,
+    endPos :: Natural,
+    stored :: a
+    }
+
+data SolidityContractT t =
   Contract {
     contractVars :: DeclarationsBy SolidityVarDef,
     contractFuncs :: DeclarationsBy SolidityFuncDef,
     contractEvents :: DeclarationsBy SolidityEventDef
     contractModifiers :: DeclarationsBy SolidityModifierDef,
-    contractTypes :: DeclarationsBy SolidityTypeDef,
+    contractTypes :: DeclarationsBy (SolidityNewTypeT t),
     -- In order of decreasing storage location
-    contractStorageVars :: [DeclID],
+    contractStorageVars :: [t DeclID],
     -- In order of increasingly derived
     contractInherits :: [ContractName],
     contractExternalNames :: Set ([ContractName], Identifier),
@@ -117,8 +131,6 @@ data SolidityArgDef =
     argStorage :: SolidityStorage
   }
 
-type SolidityTypeDef = SolidityNewType
-
 data SolidityBasicType =
   Boolean |
   Address |
@@ -132,9 +144,10 @@ data SolidityBasicType =
   Mapping     { domType  :: SolidityBasicType, codType :: SolidityBasicType } |
   Typedef     { typedefTypeID :: DeclID }
   
-data SolidityNewType =
-  Enum        { names  :: [Identifier] } |
-  Struct      { fields :: [SolidityFieldDef] }
+data SolidityNewTypeT t =
+  Enum        { names  :: t [Identifier] } |
+  Struct      { fields :: t [t SolidityFieldDef] } |
+  ContractT   { contractT :: t () }
 
 data SolidityFieldDef =
   FieldDef {

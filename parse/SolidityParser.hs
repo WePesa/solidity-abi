@@ -70,7 +70,7 @@ addModifier mName m = do
         byID = Map.insertWith theError mID m byID}
   where theError = duplicateError "modifier" mID
 
-addType :: Identifier -> SolidityTypeDef -> SolidityParser ()
+addType :: Identifier -> SolidityNewType -> SolidityParser ()
 addType tName t = do
   tID <- makeDeclID tName
   modifyState $ second $

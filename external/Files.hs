@@ -47,26 +47,20 @@ convertQualifyError m (LocalNameMissing x k) = MissingSymbol m k x
 convertQualifyError m (GlobalNameMissing x) = MissingImport m x
 convertQualifyError m (LocalNameDuplicate x k) = DuplicateSymbol m x k
 
-doImports :: Map FileName SolidityFile -> Either ImportError ContractsByName
-doImports files = do
+doImports :: Map FileName SolidityFile -> FileName -> Either ImportError ContractsByName
+doImports files name = do
   files' <- fixAllPaths files
   validateImports files'
-  let resolved = resolveImports resolved files' 
-  return $ makeContractIDMap resolved
+  let resolved = resolveImports resolved files'
+  return $ resolved Map.! name
 
-makeContractIDMap :: Map FileName SolidityContracts -> ContractsByName
-makeContractIDMap contracts = 
-  Map.foldr Map.union Map.empty $ Map.map $ 
-  Map.foldrWithKey insertContractID Map.empty contracts
-  where insertContractID cName c = Map.insert (contractID c) c
-
-resolveImports :: Map FileName SolidityContracts ->
+resolveImports :: Map FileName ContractsByName ->
                   Map FileName SolidityFile ->
-                  Map FileName SolidityContracts
+                  Map FileName ContractsByName
 resolveImports resolved files = Map.mapWithKey (resolveImport resolved) files
 
-resolveImport :: Map FileName SolidityContracts ->
-                 FileName -> SolidityFile -> SolidityContracts
+resolveImport :: Map FileName ContractsByName ->
+                 FileName -> SolidityFile -> ContractsByName
 resolveImport resolved name SolidityFile{fileContracts = contracts, fileImports = imports} = 
   contracts `Map.union` (either (error $ "Import error") id $
   getImportDefs name resolved imports)
@@ -75,9 +69,9 @@ resolveImport resolved name SolidityFile{fileContracts = contracts, fileImports 
 -- to a common base
 
 getImportDefs :: FileName ->
-                 Map FileName (Map ContractName a) ->
+                 Map FileName ContractsByName ->
                  [(FileName, ImportAs)] ->
-                 Either ImportError (Map ContractName a)
+                 Either ImportError ContractsByName
 getImportDefs mainFileName fileDefs imports = do
   importsM <- first (convertQualifyError mainFileName) $ getQualifiedNames imports' fileDefs
   sequence $ Map.foldrWithKey unionWithError Map.empty $ Map.mapWithKey adjustContractIDs importsM

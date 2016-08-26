@@ -1,79 +1,105 @@
+{-# LANGUAGE NamedFieldPuns #-}
 module Layout (doContractLayouts) where
 
 import qualified Data.Map as Map
-
-import Control.Monad
 import Control.Monad.Trans.Reader
 
 import SolidityTypes
-import LayoutTypes
 import DAG
 
-type LayoutReader = Reader SolidityContractsLayout
-
-doContractLayouts :: ContractsByName -> SolidityContractsLayout
+doContractLayouts :: ContractsByName -> ContractsABIByName
 doContractLayouts contracts = either (error "Library layout error") id $ do
   validateLibraries contracts
-  let result = Map.map (\c -> runReader (doContractLayout c) result) contracts
-  return result
+  return $ Map.map (doContractLayout $ Map.keys contracts) contracts
 
 validateLibraries :: ContractsByName -> Either (DAGError ContractName) ()
 validateLibraries contracts = 
   checkDAG $ Map.map (Map.keys . contractLibraryTypes) contracts
 
-doContractLayout :: SolidityContract -> LayoutReader SolidityContractLayout
-doContractLayout contract = do
-  varsL <- doVarsLayout (byID $ contractVars contract) (contractStorageVars contract)
-  typesL <- doTypesLayout $ contractTypes contract
-  return $ ContractLayout {
-    varsLayout = varsL,
-    typesLayout = typesL,
-    layoutIsLibrary = contractIsLibrary contract
+doContractLayout :: [ContractName] -> SolidityContract -> SolidityContractABI
+doContractLayout cNames contract =
+  Contract{
+    contractVars = contractVars contract,
+    contractFuncs = contractFuncs contract,
+    contractEvents = contractEvents contract,
+    contractModifiers = contractModifiers contract,
+    contractInherits = contractInherits contract,
+    contractExternalNames = contractExternalNames contract,
+    contractLibraryTypes = contractLibraryTypes contract,
+    contractIsConcrete = contractIsConcrete contract,
+    contractIsLibrary = contractIsLibrary contract,
+
+    -- The only two that change
+    contractTypes = typesL,
+    contractStorageVars = varsL
     }
 
-doTypesLayout :: Map DeclID SolidityTypeDef -> LayoutReader SolidityTypesLayout
-doTypesLayout types = sequence $ Map.map (doTypeLayout . byID) types
-
-doTypeLayout :: SolidityNewType -> LayoutReader SolidityTypeLayout
-doTypeLayout (Enum names)  =
-  return $ EnumLayout {
-    typeUsedBytes = ceiling $ logBase (256::Double) $ fromIntegral $ length names
-    }
-doTypeLayout (Struct fields) = do
-  fieldsLayout <- doVarTypesLayout fields
-  let lastEnd = varEndBytes $ fieldsLayout Map.! varName (last fields)
-  return $ StructLayout {
-    structFieldsLayout = fieldsLayout,
-    typeUsedBytes = nextLayoutStart lastEnd keyBytes
-    }
-
-doVarsLayout :: Map DeclID SolidityVarDef -> [DeclID] -> LayoutReader SolidityVarsLayout
-doVarsLayout varDefs varIDs = doVarTypesLayout $ map (varType . (varDefs Map.!)) varIDs
-
-doVarTypesLayout :: [SolidityBasicType] -> LayoutReader SolidityVarsLayout
-doVarTypesLayout varTs = do
-  -- vars are listed from high storage to low; we work from the right
-  varsL <- foldr (\v vLs -> makeNextVarL v vLs) (return []) varTs 
-  return $ makeVarsMap varsL
   where
-    makeVarsMap vLs = Map.fromList $ zipWith (\v vL -> (varName v, vL)) vars vLs
+    (typesL, varsL) = runLayoutReader $ do
+      typesByName <- mapM doTypeLayout $ byName cTypes
+      typesByID <- mapM doTypeLayout $ byID cTypes
+      varsL <- doVarsLayout (byID $ contractVars contract) (contractStorageVars contract)
+      return (
+        DeclarationsBy {
+          byName = typesByName
+          byID = typesByID
+          }, 
+        varsL)
+    runLayoutReader = flip runReaderT (cNames, byID typesL)
+    cTypes = contractTypes contract
+
+type LayoutReader = Reader ([ContractsName], Map DeclID SolidityNewTypeABI)
+
+doTypeLayout :: SolidityNewType -> LayoutReader SolidityNewTypeABI
+doTypeLayout Enum{names} = 
+  return Enum{
+    names = WithPos{
+      startPos = 0,
+      endPos = ceiling $ logBase (256::Double) $ fromIntegral $ length names,
+      stored = names
+      }
+    }
+doTypeLayout Struct{fields} = do
+  fieldsLayout <- doVarTypesLayout fields
+  return Struct{
+    fields = WithPos{
+      startPos = 0,
+      endPos = endPos $ last fieldsLayout
+      stored = zipWith makeFieldDefL fields fieldsLayout
+      }
+    }
+
+  where
+    makeFieldDefL fD fDL@WithPos{startPos, endPos} = WithPos{startPos, endPos, stored = fD}
+
+doVarsLayout :: Map DeclID SolidityVarDef -> [DeclID] -> LayoutReader [WithPos DeclID]
+doVarsLayout varDefs varIDs =
+  zipWith makeDeclIDL varIDs $ doVarTypesLayout $ map (varType . (varDefs Map.!)) varIDs
+
+  where
+    makeDeclIDL vID WithPos{startPos, endPos} = WithPos{startPos, endPos, vID}
+
+doVarTypesLayout :: [SolidityBasicType] -> LayoutReader [WithPos SolidityBasicType]
+doVarTypesLayout =
+  -- vars are listed from high storage to low; we work from the right
+  foldr (\v vLs -> makeNextVarL v vLs) (return []) 
+  where
     makeNextVarL v vLsR = do
       vLs <- vLsR
       case vLs of
         [] -> sequence [doVarLayout 0 v]
-        (vL : rest) -> do
-          vL' <- doVarLayout (varEndBytes vL + 1) v
-          return $ vL' : vL : rest
-    isStorage VarDef{varStorage = StorageStorage} = True
-    isStorage _ = False
+        l@(vL : rest) -> do
+          vL' <- doVarLayout (endPos vL + 1) v
+          return $ vL' : l
 
-doVarLayout :: StorageBytes -> SolidityBasicType -> LayoutReader SolidityVarLayout
+doVarLayout :: StorageBytes -> SolidityBasicType -> LayoutReader (WithPos SolidityBasicType)
 doVarLayout lastOffEnd varT = do
   tUsed <- usedBytes varT
-  let startBytes = nextLayoutStart lastOffEnd tUsed
-  return $ VarLayout {
-    varStartBytes = startBytes,
-    varEndBytes = startBytes + tUsed - 1
+  let startPos = nextLayoutStart lastOffEnd tUsed
+  return WithPos{
+    startPos,
+    endPos = startPos + tUsed - 1,
+    stored = varT
     }
 
 usedBytes :: SolidityBasicType -> LayoutReader StorageBytes
@@ -98,14 +124,19 @@ usedBytes t = case t of
   Mapping _ _ -> return keyBytes
   Typedef typeID -> typeUsedBytes <$> findTypedef typeID
 
-findTypedef :: DeclID -> LayoutReader SolidityTypeLayout
+findTypedef :: DeclID -> LayoutReader SolidityNewTypeABI
 findTypedef typeID = do
-  contractsL <- ask
-  let typesL = Map.foldr Map.union Map.empty $ Map.map typesLayout contractsL
+  (cNames, typesL) <- ask
   return $ (\f k m def -> f def k m) 
     Map.findWithDefault typeID typesL $
     Map.findWithDefault theError (declContract typeID) contractsL `seq`
-    contractTLayout addressBytes
+    ContractT {
+      contractT = WithPos {
+        startPos = 0,
+        endPos = addressBytes,
+        stored = ()
+        }
+      }
 
   where 
     theError = error $ "Couldn't find type " ++ declName typeID ++
