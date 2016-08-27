@@ -15,15 +15,15 @@ doInheritance contracts = result
     combineContracts = foldr (combine result) emptyContract . NonEmpty.map (contracts Map.!)
 
 combine :: ContractsByName -> SolidityContract -> SolidityContract -> SolidityContract
-combine contracts c1 c2 = 
+combine contracts c1 c2 = -- c1 is derived from c2
   Contract {
     contractVars = (combineDeclsBy `on` contractVars) c1 c2,
-    contractFuncs = (combineDeclsBy `on` contractFuncs) c1 c2,
+    contractFuncs = (combineFuncDecls `on` contractFuncs) c1 c2,
     contractEvents = (combineDeclsBy `on` contractEvents) c1 c2,
     contractModifiers = (combineDeclsBy `on` contractModifiers) c1 c2,
     contractTypes = (combineDeclsBy `on` contractTypes) c1 c2,
     -- Derived contracts have later storage locations, i.e. come first
-    contractStorageVars = contractStorageVars c2 ++ contractStorageVars c1,
+    contractStorageVars = contractStorageVars c1 ++ contractStorageVars c2,
     contractInherits = contractInherits c1,
     contractExternalNames = checkExternalNames c1 ++ contractExternalNames c2,
     contractLibraryTypes = newLibraryTypes c1 ++ contractLibraryTypes c2,
@@ -36,6 +36,9 @@ combine contracts c1 c2 =
       map (checkExternalName contracts c1) . contractExternalNames
     newLibraryTypes = 
       map makeID . filter (isLibraryType contracts) . contractExternalNames 
+    combineFuncDecls d1 d2 = d3{byName = Map.filterWithKey isNormalFunc $ byName d3}
+      where d3 = combineDeclsBy d1 d2
+    isNormalFunc fName fDef = not (funcIsConstructor fDef || null fName)
 
 combineDeclsBy :: DeclarationsBy a -> DeclarationsBy a -> DeclarationsBy a
 combineDeclsBy d1 d2 = 
@@ -52,12 +55,17 @@ checkExternalName _ _ ([], name) =
   error $ "Empty contract qualifier in external name " ++ name
 checkExternalName contracts c x@([cName], name) 
   | cName `elem` contractInherits c &&
-    name `Map.member` (byName $ contractTypes $ contracts Map.! cName) 
+    name `Map.member` (byName $ contractTypes $ lookupWithError cName contracts) 
     = x
   | otherwise
     = error $ "Type " ++ name ++ " not visible in contract " ++ cName
 checkExternalName contracts _ x@(cName:rest, name) =
-  checkExternalName contracts (contracts Map.! cName) (rest,name) `seq` x
+  checkExternalName contracts (lookupWithError cName contracts) (rest,name) `seq` x
+
+lookupWithError :: ContractName -> ContractsByName -> SolidityContract
+lookupWithError cName contracts = Map.findWithDefault theError cName contracts
+  where
+    theError = error $ "Couldn't find any contract named " ++ cName
  
 isLibraryType :: ContractsByName -> ([ContractName], Identifier) -> Bool
 isLibraryType _ ([], name) = 

@@ -25,7 +25,7 @@ solidityContract fileName = do
     commaSep1 $ do
       name <- intercalate "." <$> sepBy1 identifier dot
       _ <- option "" parensCode
-      addBase name -- Executed left-to-right, so least-to-most derived
+      addBase name -- Executed left-to-right, but reversed by prepending
     return ()
   braces $ skipMany solidityDeclaration
   isAbstract <- getIsAbstract
@@ -54,7 +54,9 @@ structDeclaration = do
     decl <- simpleVariableDeclaration
     semi
     return $ toFieldDef decl
-  addType structName Struct{ fields = structFields }
+  -- Reverse is necessary because the layout has to follow the convention
+  -- of storage variables
+  addType structName Struct{ fields = reverse structFields }
 
 enumDeclaration :: SolidityParser ()
 enumDeclaration = do
@@ -164,6 +166,7 @@ functionModifiers =
       funcArgType = args,
       funcVisibility = v,
       funcHasCode = not $ null code,
+      funcIsConstructor = False, -- Will be changed in due course
       funcIsConstant = case s of {ValueStorage -> True; _ -> False}
     }) <$?>
     (TupleValue [], returnModifier) <|?>

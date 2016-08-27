@@ -41,6 +41,7 @@ addFunc :: Identifier -> SolidityFuncDef -> SolidityParser ()
 addFunc fName f = do
   fID <- makeDeclID fName
   let 
+    f' = f{funcIsConstructor = fName == declContract fID}
     theError =
       error $ "Duplicate definition of " ++ (
                 if null $ declName fID
@@ -50,8 +51,8 @@ addFunc fName f = do
   modifyState $ second $
     \c@Contract{contractFuncs = DeclarationsBy{byName, byID}} ->
       c{contractFuncs = DeclarationsBy{
-          byName = Map.insertWith theError fName f byName,
-          byID = Map.insertWith theError fID f byID
+          byName = Map.insertWith theError fName f' byName,
+          byID = Map.insertWith theError fID f' byID
           }
        }
 

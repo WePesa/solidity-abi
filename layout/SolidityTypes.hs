@@ -56,7 +56,7 @@ data SolidityContractT (t :: * -> *) =
     contractTypes :: DeclarationsBy (SolidityNewTypeT t),
     -- In order of decreasing storage location
     contractStorageVars :: StorageVars t DeclID,
-    -- In order of increasingly derived
+    -- In order of increasingly base
     contractInherits :: [ContractName],
     contractExternalNames :: [([ContractName], Identifier)],
     contractLibraryTypes :: [DeclID],
@@ -116,6 +116,7 @@ data SolidityFuncDef =
     funcValueType :: SolidityTuple,
     funcArgType :: SolidityTuple,
     funcHasCode :: Bool,
+    funcIsConstructor :: Bool,
     funcIsConstant :: Bool
     }
 

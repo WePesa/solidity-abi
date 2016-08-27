@@ -65,7 +65,7 @@ doTypeLayout Struct{fields} = do
   fieldsLayout <- doVarTypesLayout $ map fieldType fields
   return StructPos{
     fieldsPos = WithSize{
-      sizeOf = 1 + endPos (last fieldsLayout),
+      sizeOf = 1 + endPos (head fieldsLayout), -- fields are reversed
       stored = zipWith makeFieldDefL fields fieldsLayout
       }
     }
@@ -140,9 +140,8 @@ findTypedef typeID = do
                        " in contract " ++ declContract typeID ++
                        " nor as a contract type."
     contractT = ContractTPos {
-      contractTPos = WithPos {
-        startPos = 0,
-        endPos = addressBytes,
+      contractTPos = WithSize {
+        sizeOf = addressBytes,
         stored = ()
         }
       }

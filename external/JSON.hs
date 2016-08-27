@@ -82,25 +82,30 @@ contractABI :: Map ContractName ContractABI -> ContractsABIByName ->
 contractABI allABI allContracts name contract =
   ContractABI {
     contractVarsABI = varsABI name vars (contractStorageVars contract),
-    contractFuncsABI = funcsABI name allTypes funcs,
+    contractFuncsABI = funcsABI name allTypes (byName $ contractFuncs contract),
     contractEventsABI = eventsABI name allTypes (byName $ contractEvents contract),
     contractTypesABI = typesABI name (byName $ contractTypes contract),
     contractLibraryTypesABI = libTypesABI allABI (contractLibraryTypes contract),
-    contractConstrABI = constrABI name funcs,
+    contractConstrABI = constrABI name (byID $ contractFuncs contract),
     contractIsConcreteABI = contractIsConcrete contract,
     contractLibraryABI = contractIsLibrary contract
     }
   where
     vars = byID $ contractVars contract
     allTypes = Map.foldr Map.union Map.empty $ Map.map (byID . contractTypes) allContracts
-    funcs = (byName $ contractFuncs contract) `del` name `del` ""
-    del = flip Map.delete
+
+constrABI :: ContractName -> Map DeclID SolidityFuncDef -> ValueMap
+constrABI cName funcs = 
+  maybe Map.empty (tupleABI cName . funcArgType) $ Map.lookup (DeclID cName cName) funcs
 
 varsABI :: ContractName -> Map DeclID SolidityVarDef -> [WithPos DeclID] -> ValueMap
 varsABI name vars varIDs = Map.fromList $ map makeVarAssoc varIDs
   where
     makeVarAssoc WithPos{startPos, stored = vID} =
-      (declName vID, varABI name startPos $ varType $ vars Map.! vID)
+      (declName vID, varABI name startPos $ varType $ lookupWithError vID vars)
+    lookupWithError k m = Map.findWithDefault theError k m
+      where
+        theError = error $ "Couldn't find storage variable " ++ declName k ++ " in contract " ++ declContract k
 
 fieldsABI :: ContractName -> [WithPos SolidityFieldDef] -> ValueMap
 fieldsABI name = Map.fromList . map makeFieldAssoc
@@ -122,15 +127,12 @@ typesABI name = Map.map (typeABI name)
 libTypesABI :: Map ContractName ContractABI -> [DeclID] -> Map ContractName ValueMap
 libTypesABI allABIs lIDs =
   Map.filter (not . Map.null) $
-  Map.mapWithKey (\k abi -> Map.intersection (contractTypesABI abi) (idMap Map.! k)) allABIs
+  Map.mapWithKey (\k abi -> Map.intersection (contractTypesABI abi) (Map.findWithDefault Map.empty k idMap)) allABIs
 
   where
     idMap =
       Map.fromList $
       map (\DeclID{declContract, declName} -> (declContract, Map.singleton declName ())) lIDs
-
-constrABI :: ContractName -> Map Identifier SolidityFuncDef -> ValueMap
-constrABI name funcs = maybe Map.empty (tupleABI name . funcArgType) $ Map.lookup name funcs
 
 tupleABI :: ContractName -> SolidityTuple -> ValueMap
 tupleABI cName (TupleValue args) = Map.fromList $ zipWith indexObjABI [0 :: Integer ..] args
