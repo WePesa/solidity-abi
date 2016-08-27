@@ -51,7 +51,7 @@ structDeclaration = do
   reserved "struct"
   structName <- identifier
   structFields <- braces $ many1 $ do
-    decl <- simpleVariableDeclaration
+    decl <- simpleVariableDeclaration [TypeStorage]
     semi
     return $ toFieldDef decl
   -- Reverse is necessary because the layout has to follow the convention
@@ -79,7 +79,7 @@ usingDeclaration = do
 
 variableDeclaration :: SolidityParser ()
 variableDeclaration = do
-  (vName, vDecl) <- simpleVariableDeclaration
+  (vName, vDecl) <- simpleVariableDeclaration [StorageStorage, MemoryStorage, ValueStorage]
   optional $ do
     reservedOp "="
     many $ noneOf ";"
@@ -87,12 +87,17 @@ variableDeclaration = do
   when (null vName) $ fail "State variable name may not be empty"
   addVar vName vDecl
 
-simpleVariableDeclaration :: SolidityParser (Identifier, SolidityVarDef)
-simpleVariableDeclaration = do
+simpleVariableDeclaration :: [SolidityStorage] -> SolidityParser (Identifier, SolidityVarDef)
+simpleVariableDeclaration allowedStorage = do
   variableType <- simpleTypeExpression
-  typeMaker <- variableModifiers
+  typeMaker <- variableModifiers $ head allowedStorage
   variableName <- option "" identifier
-  return $ (variableName, typeMaker variableType)
+  let result = (variableName, typeMaker variableType)
+      stor = varStorage $ snd result
+  unless (stor `elem` allowedStorage) $
+    fail $ "Argument or variable named '" ++ variableName ++ 
+           "' may not have storage " ++ show stor
+  return result
 
 {- Functions and function-like -}
 
@@ -100,7 +105,7 @@ functionDeclaration :: SolidityParser ()
 functionDeclaration = do
   reserved "function"
   name <- option "" identifier
-  args <- tupleDeclaration
+  args <- tupleDeclaration [MemoryStorage, StorageStorage]
   objMaker <- functionModifiers
   functionBody <- bracedCode <|> (semi >> return "")
   addFunc name $ objMaker args functionBody
@@ -109,7 +114,8 @@ eventDeclaration :: SolidityParser ()
 eventDeclaration = do
   reserved "event"
   name <- identifier
-  logs <- tupleDeclaration
+  logs@(TupleValue logsL) <- tupleDeclaration [StorageStorage, IndexedStorage]
+  when (length logsL > 4) $ fail $ "Event " ++ name ++ " has more than 4 topics"
   isAnon <- option False $ reserved "anonymous" >> return True
   semi
   addEvent name $ EventDef {
@@ -121,7 +127,7 @@ modifierDeclaration :: SolidityParser ()
 modifierDeclaration = do
   reserved "modifier"
   name <- identifier
-  args <- option (TupleValue []) tupleDeclaration
+  args <- option (TupleValue []) $ tupleDeclaration [MemoryStorage]
   defn <- bracedCode
   addModifier name $ ModifierDef {
     modArgs = args,
@@ -130,8 +136,10 @@ modifierDeclaration = do
 
 {- Not really declarations -}
 
-tupleDeclaration :: SolidityParser SolidityTuple
-tupleDeclaration = fmap TupleValue $ parens $ commaSep $ toArgDef <$> simpleVariableDeclaration
+tupleDeclaration :: [SolidityStorage] -> SolidityParser SolidityTuple
+tupleDeclaration allowedStorage = 
+  fmap TupleValue $ parens $ commaSep $ toArgDef <$>
+  simpleVariableDeclaration allowedStorage
 
 visibilityModifier :: SolidityParser SolidityVisibility
 visibilityModifier =
@@ -147,8 +155,8 @@ storageModifier =
   (reserved "memory" >> return MemoryStorage) <|>
   (reserved "indexed" >> return IndexedStorage)
 
-variableModifiers :: SolidityParser (SolidityBasicType -> SolidityVarDef)
-variableModifiers =
+variableModifiers :: SolidityStorage -> SolidityParser (SolidityBasicType -> SolidityVarDef)
+variableModifiers defaultStorage =
   permute $ (\v s ->
     \variableType -> VarDef {
       varType = variableType,
@@ -156,7 +164,7 @@ variableModifiers =
       varStorage = s
     }) <$?>
     (InternalVisible, visibilityModifier) <|?>
-    (StorageStorage, storageModifier)
+    (defaultStorage, storageModifier)
 
 functionModifiers :: SolidityParser (SolidityTuple -> SourceCode -> SolidityFuncDef)
 functionModifiers =
@@ -178,7 +186,7 @@ functionModifiers =
     ("", otherModifiers) -- Fenceposts for the explicit modifiers
 
   where
-    returnModifier = reserved "returns" >> tupleDeclaration
+    returnModifier = reserved "returns" >> tupleDeclaration [MemoryStorage]
     otherModifiers = fmap (intercalate " ") $ many $ do
       name <- identifier
       args <- optionMaybe parensCode

@@ -138,10 +138,15 @@ tupleABI :: ContractName -> SolidityTuple -> ValueMap
 tupleABI cName (TupleValue args) = Map.fromList $ zipWith indexObjABI [0 :: Integer ..] args
   where
     indexObjABI :: Integer -> SolidityArgDef -> (Identifier, Value)
-    indexObjABI i arg = (realName, object $ (pair "index" i) : basicTypeABI cName (argType arg))
+    indexObjABI i arg =
+      (realName, object $ (pair "index" i) : basicTypeABI cName (argType arg) ++ indexed)
       where 
         realName = if null name then "#" ++ show i else name
         name = argName arg
+        indexed =
+          case argStorage arg of
+            IndexedStorage -> [pair "indexed" True]
+            _ -> [] 
 
 varABI :: ContractName -> Natural -> SolidityBasicType -> Value
 varABI name startBytes t = object $ pair "atBytes" startBytes' : basicTypeABI name t

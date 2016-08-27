@@ -108,7 +108,7 @@ data SolidityVarDef =
 
 data SolidityVisibility = PublicVisible | PrivateVisible | InternalVisible | ExternalVisible
 
-data SolidityStorage = StorageStorage | MemoryStorage | IndexedStorage | ValueStorage
+data SolidityStorage = StorageStorage | MemoryStorage | IndexedStorage | ValueStorage | TypeStorage deriving (Eq, Show)
            
 data SolidityFuncDef =
   FuncDef {
