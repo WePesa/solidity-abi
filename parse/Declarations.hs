@@ -1,6 +1,8 @@
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module Declarations (solidityContract) where
 
+import Control.Monad
+
 import Data.Either
 import Data.List
 import Data.Maybe
@@ -15,7 +17,7 @@ import Types
 
 solidityContract :: FileName -> SolidityParser ()
 solidityContract fileName = do
-  isLibrary <- (reserved "contract" >> return False) <|> (reserved "library" >> True)
+  isLibrary <- (reserved "contract" >> return False) <|> (reserved "library" >> return True)
   name <- identifier
   initContract name isLibrary
   optional $ do
@@ -80,7 +82,7 @@ variableDeclaration = do
     reservedOp "="
     many $ noneOf ";"
   semi
-  guard (not $ null vName) $ fail "State variable name may not be empty"
+  when (null vName) $ fail "State variable name may not be empty"
   addVar vName vDecl
 
 simpleVariableDeclaration :: SolidityParser (Identifier, SolidityVarDef)

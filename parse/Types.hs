@@ -30,7 +30,7 @@ simpleType =
       if null typePath
       then return defaultTypeID
       else do 
-        addExternalName (typePath, typeName),
+        addExternalName (typePath, typeName)
         return defaultTypeID{declContract = last typePath}
     return Typedef{ typedefTypeID = realTypeID }
   )

@@ -1,6 +1,9 @@
+{-# LANGUAGE TypeFamilies, EmptyDataDecls, NamedFieldPuns #-}
 module SolidityTypes where
 
 import Data.Map (Map)
+import qualified Data.Map as Map
+
 import Text.Parsec (SourceName)
 import Numeric.Natural
 
@@ -26,9 +29,9 @@ data ImportAs =
 type SolidityContract = SolidityContractT WithoutPos
 type SolidityContractABI = SolidityContractT WithPos
 type SolidityNewType = SolidityNewTypeT WithoutPos
-type SolidityNewTypeABI = SolidityNewType WithPos
+type SolidityNewTypeABI = SolidityNewTypeT WithPos
 
-type WithoutPos a = a
+data WithoutPos a
 data WithPos a =
   WithPos {
     startPos :: Natural,
@@ -40,15 +43,19 @@ data WithPos a =
     stored :: a
     }
 
-data SolidityContractT t =
+type family StorageVars t a where
+  StorageVars WithoutPos a = [a]
+  StorageVars WithPos a = [WithPos a]
+
+data SolidityContractT (t :: * -> *) =
   Contract {
     contractVars :: DeclarationsBy SolidityVarDef,
     contractFuncs :: DeclarationsBy SolidityFuncDef,
-    contractEvents :: DeclarationsBy SolidityEventDef
+    contractEvents :: DeclarationsBy SolidityEventDef,
     contractModifiers :: DeclarationsBy SolidityModifierDef,
     contractTypes :: DeclarationsBy (SolidityNewTypeT t),
     -- In order of decreasing storage location
-    contractStorageVars :: [t DeclID],
+    contractStorageVars :: StorageVars t DeclID,
     -- In order of increasingly derived
     contractInherits :: [ContractName],
     contractExternalNames :: [([ContractName], Identifier)],
@@ -89,7 +96,7 @@ emptyDeclsBy =
 data DeclID = 
   DeclID {
     declContract :: ContractName,
-    declName :: Identifier,
+    declName :: Identifier
     } deriving (Eq, Ord)
 
 data SolidityVarDef =
@@ -146,10 +153,20 @@ data SolidityBasicType =
   Mapping     { domType  :: SolidityBasicType, codType :: SolidityBasicType } |
   Typedef     { typedefTypeID :: DeclID }
   
-data SolidityNewTypeT t =
-  Enum        { names  :: t [Identifier] } |
-  Struct      { fields :: t [t SolidityFieldDef] } |
-  ContractT   { contractT :: t () }
+data family SolidityNewTypeT (t :: * -> *)
+data instance SolidityNewTypeT WithoutPos =
+  Enum        { names  :: [Identifier] } |
+  Struct      { fields :: [SolidityFieldDef] } |
+  ContractT   { contractT :: () }
+data instance SolidityNewTypeT WithPos = 
+  EnumPos        { namesPos  :: WithPos [Identifier] } |
+  StructPos      { fieldsPos :: WithPos [WithPos SolidityFieldDef] } |
+  ContractTPos   { contractTPos :: WithPos () }
+
+typeSize :: SolidityNewTypeT WithPos -> Natural
+typeSize EnumPos{namesPos} = sizeOf namesPos
+typeSize StructPos{fieldsPos} = sizeOf fieldsPos
+typeSize ContractTPos{contractTPos} = sizeOf contractTPos
 
 data SolidityFieldDef =
   FieldDef {

@@ -1,5 +1,10 @@
 module Structure where
 
+import Data.Map (Map)
+import qualified Data.Map as Map
+
+import Data.Bifunctor
+
 import Files
 import Inheritance
 import Parser

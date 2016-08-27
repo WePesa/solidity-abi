@@ -1,5 +1,7 @@
 module Inheritance (doInheritance) where
 
+import Data.Function
+
 import qualified Data.List.NonEmpty as NonEmpty
 import qualified Data.Map as Map
 
@@ -24,8 +26,8 @@ combine contracts c1 c2 =
     contractStorageVars = contractStorageVars c2 ++ contractStorageVars c1,
     contractInherits = contractInherits c1,
     contractExternalNames = checkExternalNames c1 ++ contractExternalNames c2,
-    contractLibraryTypes = checkLibraryTypes c1 ++ contractLibraryTypes c2,
-    contractIsConcrete = all funcHasCode $ declaredFuncs $ contractDeclarationsByName c2,
+    contractLibraryTypes = newLibraryTypes c1 ++ contractLibraryTypes c2,
+    contractIsConcrete = all funcHasCode $ byName $ contractFuncs c2,
     contractIsLibrary = contractIsLibrary c1
   }
 
@@ -48,7 +50,7 @@ checkExternalName :: ContractsByName -> SolidityContract ->
                      ([ContractName], Identifier) -> ([ContractName], Identifier)
 checkExternalName _ _ ([], name) =
   error $ "Empty contract qualifier in external name " ++ name
-checkExternalName contracts c x@([cName], name) =
+checkExternalName contracts c x@([cName], name) 
   | cName `elem` contractInherits c &&
     name `Map.member` (byName $ contractTypes $ contracts Map.! cName) 
     = x
@@ -57,11 +59,10 @@ checkExternalName contracts c x@([cName], name) =
 checkExternalName contracts _ x@(cName:rest, name) =
   checkExternalName contracts (contracts Map.! cName) (rest,name) `seq` x
  
-checkLibraryType :: ContractsByName -> 
-                    ([ContractName], Identifier) -> ([ContractName], Identifier)
-checkLibraryType _ ([], name) = 
+isLibraryType :: ContractsByName -> ([ContractName], Identifier) -> Bool
+isLibraryType _ ([], name) = 
   error $ "Empty contract qualifier when checking library type " ++ name
-checkLibraryType contracts x@([cName], name) =
+isLibraryType contracts x@([cName], name) =
   Map.findWithDefault False cName $ Map.map contractIsLibrary contracts 
 
 makeID :: ([ContractName], Identifier) -> DeclID

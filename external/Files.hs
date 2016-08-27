@@ -74,16 +74,13 @@ getImportDefs :: FileName ->
                  Either ImportError ContractsByName
 getImportDefs mainFileName fileDefs imports = do
   importsM <- first (convertQualifyError mainFileName) $ getQualifiedNames imports' fileDefs
-  sequence $ Map.foldrWithKey unionWithError Map.empty $ Map.mapWithKey adjustContractIDs importsM
+  sequence $ Map.foldrWithKey unionWithError Map.empty importsM
   where
     imports' = map (second convertImportAs) imports
     convertImportAs Unqualified = QualifyAll id
     convertImportAs (StarPrefix p) = QualifyAll ((p ++ ".") ++)
     convertImportAs (Aliases as) = QualifySome as
     unionWithError x = Map.unionWithKey (\k _ _ -> Left $ DuplicateSymbol mainFileName x k) . Map.map Right
-    adjustContractIDs = Map.mapWithKey . adjustContractID
-    adjustContractID file name contract =
-      contract{contractID = ContractID{contractRealFile = file, contractRealName = name}}
 
 validateImports :: Map FileName SolidityFile -> Either ImportError ()
 validateImports files = 

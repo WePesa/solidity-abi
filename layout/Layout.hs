@@ -1,9 +1,12 @@
 {-# LANGUAGE NamedFieldPuns #-}
 module Layout (doContractLayouts) where
 
+import Data.List
+import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Monad.Trans.Reader
 
+import LayoutTypes
 import SolidityTypes
 import DAG
 
@@ -14,7 +17,7 @@ doContractLayouts contracts = either (error "Library layout error") id $ do
 
 validateLibraries :: ContractsByName -> Either (DAGError ContractName) ()
 validateLibraries contracts = 
-  checkDAG $ Map.map (Map.keys . contractLibraryTypes) contracts
+  checkDAG $ Map.map (map declContract . contractLibraryTypes) contracts
 
 doContractLayout :: [ContractName] -> SolidityContract -> SolidityContractABI
 doContractLayout cNames contract =
@@ -41,28 +44,28 @@ doContractLayout cNames contract =
       varsL <- doVarsLayout (byID $ contractVars contract) (contractStorageVars contract)
       return (
         DeclarationsBy {
-          byName = typesByName
+          byName = typesByName,
           byID = typesByID
           }, 
         varsL)
-    runLayoutReader = flip runReaderT (cNames, byID typesL)
+    runLayoutReader = flip runReader (cNames, byID typesL)
     cTypes = contractTypes contract
 
-type LayoutReader = Reader ([ContractsName], Map DeclID SolidityNewTypeABI)
+type LayoutReader = Reader ([ContractName], Map DeclID SolidityNewTypeABI)
 
 doTypeLayout :: SolidityNewType -> LayoutReader SolidityNewTypeABI
 doTypeLayout Enum{names} = 
-  return Enum{
-    names = WithSize{
+  return EnumPos{
+    namesPos = WithSize{
       sizeOf = ceiling $ logBase (256::Double) $ fromIntegral $ length names,
       stored = names
       }
     }
 doTypeLayout Struct{fields} = do
-  fieldsLayout <- doVarTypesLayout fields
-  return Struct{
-    fields = WithSize{
-      sizeOf = 1 + endPos (last fieldsLayout)
+  fieldsLayout <- doVarTypesLayout $ map fieldType fields
+  return StructPos{
+    fieldsPos = WithSize{
+      sizeOf = 1 + endPos (last fieldsLayout),
       stored = zipWith makeFieldDefL fields fieldsLayout
       }
     }
@@ -71,11 +74,12 @@ doTypeLayout Struct{fields} = do
     makeFieldDefL fD fDL@WithPos{startPos, endPos} = WithPos{startPos, endPos, stored = fD}
 
 doVarsLayout :: Map DeclID SolidityVarDef -> [DeclID] -> LayoutReader [WithPos DeclID]
-doVarsLayout varDefs varIDs =
-  zipWith makeDeclIDL varIDs $ doVarTypesLayout $ map (varType . (varDefs Map.!)) varIDs
+doVarsLayout varDefs varIDs = do
+  varLayouts <- doVarTypesLayout $ map (varType . (varDefs Map.!)) varIDs
+  return $ zipWith makeDeclIDL varIDs varLayouts 
 
   where
-    makeDeclIDL vID WithPos{startPos, endPos} = WithPos{startPos, endPos, vID}
+    makeDeclIDL vID WithPos{startPos, endPos} = WithPos{startPos, endPos, stored = vID}
 
 doVarTypesLayout :: [SolidityBasicType] -> LayoutReader [WithPos SolidityBasicType]
 doVarTypesLayout =
@@ -120,26 +124,28 @@ usedBytes t = case t of
     return $ keyBytes * numKeys
   DynamicArray _ -> return keyBytes
   Mapping _ _ -> return keyBytes
-  Typedef typeID -> sizeOf <$> findTypedef typeID -- this is defined in doTypesLayout
+  Typedef typeID -> typeSize <$> findTypedef typeID -- this is defined in doTypesLayout
 
 findTypedef :: DeclID -> LayoutReader SolidityNewTypeABI
 findTypedef typeID = do
   (cNames, typesL) <- ask
   return $ (\f k m def -> f def k m) 
     Map.findWithDefault typeID typesL $
-    Map.findWithDefault theError (declContract typeID) contractsL `seq`
-    ContractT {
-      contractT = WithPos {
+    if declContract typeID `elem` cNames
+    then contractT
+    else theError
+    
+  where 
+    theError = error $ "Couldn't find type " ++ declName typeID ++
+                       " in contract " ++ declContract typeID ++
+                       " nor as a contract type."
+    contractT = ContractTPos {
+      contractTPos = WithPos {
         startPos = 0,
         endPos = addressBytes,
         stored = ()
         }
       }
-
-  where 
-    theError = error $ "Couldn't find type " ++ declName typeID ++
-                       " in contract " ++ declContract typeID ++
-                       " nor as a contract type."
 
 nextLayoutStart :: StorageBytes -> StorageBytes -> StorageBytes
 nextLayoutStart 0 _ = 0

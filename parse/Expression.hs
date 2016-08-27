@@ -7,7 +7,8 @@ import Text.Parsec.Expr
 import Data.Functor.Identity
 
 import Lexer
-import ParserTypes
+import SolidityParser
+import SolidityTypes
 
 intExpr :: (Integral a) => SolidityParser a
 intExpr = buildExpressionParser intTable intTerm
