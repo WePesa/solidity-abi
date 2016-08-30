@@ -1,4 +1,4 @@
-module C3 (c3Linearize) where
+module C3 (c3Linearize, c3Memoize) where
 
 import Data.Either
 import Data.List.NonEmpty
@@ -7,17 +7,23 @@ import Data.Semigroup
 import qualified Data.Map as Map
 
 import Prelude hiding (map, head, tail, dropWhile)
+import Prelude as P (map)
 
 c3Linearize :: (Ord a) => Map a [a] -> Map a (NonEmpty a)
 c3Linearize xM = xLM
   where xLM = Map.mapWithKey (c3Memoize xLM) xM
 
 c3Memoize :: (Ord a) => Map a (NonEmpty a) -> a -> [a] -> NonEmpty a
-c3Memoize xLM x [] = fromList [x]
-c3Memoize xLM x xDeps = x <| c3Merge (map getDeps xDepsNE <> fromList [xDepsNE])
+c3Memoize xLM x xDeps = c3Combine x $ P.map getDeps xDeps
   where
-    xDepsNE = fromList xDeps
     getDeps y = Map.findWithDefault (error $ "Invalid base class found") y xLM
+
+c3Combine :: (Eq a) => a -> [NonEmpty a] -> NonEmpty a
+c3Combine [] x = fromList [x]
+c3Combine xDepsL x  = x <| c3Merge (xDepsLNE <> fromList [xDepsNE])
+  where
+    xDepsLNE = fromList xDepsL
+    xDepsNE = map head xDepsLNE
 
 c3Merge :: (Eq a) => NonEmpty (NonEmpty a) -> NonEmpty a
 c3Merge = unfoldr c3Split

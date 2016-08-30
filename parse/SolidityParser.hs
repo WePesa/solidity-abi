@@ -7,21 +7,21 @@ import Data.Bifunctor
 import Text.Parsec
 import SolidityTypes
 
-type SolidityParser = Parsec SourceCode (ContractName, SolidityContract)
+type SolidityParser = Parsec SourceCode (ContractID, SolidityContract)
 
-initContract :: ContractName -> Bool -> SolidityParser ()
-initContract name isLibrary = 
-  putState (name, emptyContract{contractIsLibrary = isLibrary})
+initContract :: FileName -> ContractName -> Bool -> SolidityParser ()
+initContract fileName name isLibrary = 
+  putState (ContractID fileName name, emptyContract{contractIsLibrary = isLibrary})
 
 makeDeclID :: Identifier -> SolidityParser DeclID
 makeDeclID id = do
-  (name, _) <- getState
+  (cID, _) <- getState
   return DeclID{
-    declContract = name,
+    declContract = cID,
     declName = id
     }
 
-addVar :: Identifier -> SolidityVarDef -> SolidityParser ()
+addVar :: Identifier -> VarDef -> SolidityParser ()
 addVar vName v = do
   vID <- makeDeclID vName
   let theError = duplicateError "variable" vID
@@ -37,26 +37,30 @@ addVar vName v = do
             _ -> contractStorageVars
        }
 
-addFunc :: Identifier -> SolidityFuncDef -> SolidityParser ()
+addFunc :: Identifier -> FuncDef -> SolidityParser ()
 addFunc fName f = do
   fID <- makeDeclID fName
   let 
-    f' = f{funcIsConstructor = fName == declContract fID}
+    f' = f{funcIsConstructor = fName == contractName (declContract fID)}
     theError =
       error $ "Duplicate definition of " ++ (
                 if null $ declName fID
                 then "default function"
                 else "function " ++ declName fID
-              ) ++ " in contract " ++ declContract fID
+              ) ++ " in contract " ++ contractName (declContract fID)
+                ++ " in file " ++ contractFile (declContract fID)
   modifyState $ second $
     \c@Contract{contractFuncs = DeclarationsBy{byName, byID}} ->
       c{contractFuncs = DeclarationsBy{
-          byName = Map.insertWith theError fName f' byName,
+          byName = 
+            if funcIsConstructor f' || null fName
+            then byName
+            else Map.insertWith theError fName f' byName,
           byID = Map.insertWith theError fID f' byID
           }
        }
 
-addEvent :: Identifier -> SolidityEventDef -> SolidityParser ()
+addEvent :: Identifier -> EventDef -> SolidityParser ()
 addEvent eName e = do
   eID <- makeDeclID eName
   let theError = duplicateError "event" eID
@@ -68,7 +72,7 @@ addEvent eName e = do
           }
        }
 
-addModifier :: Identifier -> SolidityModifierDef -> SolidityParser ()
+addModifier :: Identifier -> ModifierDef -> SolidityParser ()
 addModifier mName m = do
   mID <- makeDeclID mName
   let theError = duplicateError "modifier" mID
@@ -80,7 +84,7 @@ addModifier mName m = do
           }
        }
 
-addType :: Identifier -> SolidityNewType -> SolidityParser ()
+addType :: Identifier -> NewType -> SolidityParser ()
 addType tName t = do
   tID <- makeDeclID tName
   let theError = duplicateError "type" tID
@@ -93,12 +97,19 @@ addType tName t = do
        }
 
 addBase :: ContractName -> SolidityParser ()
-addBase n = modifyState $ second $
-  \c -> c{contractInherits = n : contractInherits c}
+addBase n = do
+  (cID, _) <- getState
+  let baseID = cID{contractName = n} -- Base names must be in the same file 
+  modifyState $ second $
+    \c -> c(contractBases = baseID : contractBases c}
 
-addExternalName :: ([ContractName], Identifier) -> SolidityParser ()
-addExternalName pathName = modifyState $ second $
-  \c -> c{contractExternalNames = pathName : contractExternalNames c}
+newLinkage :: LinkT 'Incomplete -> SolidityParser LinkID
+newLinkage linkT = do
+  (cID, _) <- getState
+  let linkID = LinkID { linkContract = cID, linkName = linkT }
+  modifyState $ second $
+    \c -> c{contractLinkage = Map.insert linkID linkT $ contractLinkage c}
+  return linkID
 
 getIsAbstract :: SolidityParser Bool
 getIsAbstract = not . contractIsConcrete . snd <$> getState
@@ -107,11 +118,11 @@ duplicateError :: String -> DeclID -> a
 duplicateError name id =
   error $ "Duplicate definition of " ++ name ++ declName id ++ " in contract " ++ declContract id
 
-toArgDef :: (Identifier, SolidityVarDef) -> SolidityArgDef
+toArgDef :: (Identifier, VarDef) -> ArgDef
 toArgDef (name, VarDef{varType, varStorage}) =
-   ArgDef{argName = name, argType = varType, argStorage = varStorage}
+  ArgDef{argName = name, argType = varType, argStorage = varStorage}
 
-toFieldDef :: (Identifier, SolidityVarDef) -> SolidityFieldDef
+toFieldDef :: (Identifier, VarDef) -> FieldDef
 toFieldDef (name, VarDef{varType}) =
   FieldDef{fieldName = name, fieldType = varType}
 

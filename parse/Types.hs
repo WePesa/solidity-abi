@@ -10,10 +10,10 @@ import Lexer
 import SolidityParser
 import SolidityTypes
 
-simpleTypeExpression :: SolidityParser SolidityBasicType
+simpleTypeExpression :: SolidityParser BasicType
 simpleTypeExpression = try arrayType <|> simpleType <|> mappingType
 
-simpleType :: SolidityParser SolidityBasicType
+simpleType :: SolidityParser BasicType
 simpleType =
   simple "bool" Boolean <|>
   simple "address" Address <|>
@@ -21,19 +21,13 @@ simpleType =
   bytes' <|>
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
-  (do
-    qualifiedName <- identifierPath
-    let typeName = last qualifiedName
-    defaultTypeID <- makeDeclID typeName
-    let typePath = init qualifiedName
-    realTypeID <-
-      if null typePath
-      then return defaultTypeID
-      else do 
-        addExternalName (typePath, typeName)
-        return defaultTypeID{declContract = last typePath}
-    return Typedef{ typedefTypeID = realTypeID }
-  )
+  LinkT <$> do
+    constr <- option UnqualifiedTypedef $ do
+      qualifier <- identifier
+      dot
+      return $ QualifiedTypedef qualifier
+    name <- identifier
+    newLinkage $ constr name
   where
     simple name nameType = do
       reserved name
@@ -53,7 +47,7 @@ simpleType =
       let size = read $ fromMaybe (head sizesS) sizeM
       return $ baseType (size `quot` 8) -- in bytes
 
-arrayType :: SolidityParser SolidityBasicType
+arrayType :: SolidityParser BasicType
 arrayType = do
   baseElemType <- simpleType <|> mappingType
   sizeList <- many1 $ brackets $ optionMaybe intExpr
@@ -61,7 +55,7 @@ arrayType = do
   where
     makeArrayType = foldl (\t -> maybe (DynamicArray t) (FixedArray t))
 
-mappingType :: SolidityParser SolidityBasicType
+mappingType :: SolidityParser BasicType
 mappingType = do
   reserved "mapping"
   (mapDomT, mapCodT) <- parens $ do

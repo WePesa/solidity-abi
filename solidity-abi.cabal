@@ -58,9 +58,10 @@ library
                        unordered-containers,
                        vector,
                        transformers
-  hs-source-dirs:      .
-                       algo
+  hs-source-dirs:      algo
                        external
+                       inheritance
                        layout
+                       linkage
                        parse
   default-language:    Haskell2010

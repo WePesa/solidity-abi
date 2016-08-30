@@ -8,5 +8,5 @@ import SolidityTypes
 
 parseSolidity :: FileName -> SourceCode -> Either ParseError SolidityFile
 parseSolidity fileName source = 
-  runParser (solidityFile fileName) ("", emptyContract) fileName source
+  runParser (solidityFile fileName) (ContractID "" "", emptyContract) fileName source
 

@@ -19,7 +19,7 @@ solidityContract :: FileName -> SolidityParser ()
 solidityContract fileName = do
   isLibrary <- (reserved "contract" >> return False) <|> (reserved "library" >> return True)
   name <- identifier
-  initContract name isLibrary
+  initContract fileName name isLibrary
   optional $ do
     reserved "is"
     commaSep1 $ do
@@ -87,7 +87,7 @@ variableDeclaration = do
   when (null vName) $ fail "State variable name may not be empty"
   addVar vName vDecl
 
-simpleVariableDeclaration :: [SolidityStorage] -> SolidityParser (Identifier, SolidityVarDef)
+simpleVariableDeclaration :: [Storage] -> SolidityParser (Identifier, VarDef)
 simpleVariableDeclaration allowedStorage = do
   variableType <- simpleTypeExpression
   typeMaker <- variableModifiers $ head allowedStorage
@@ -136,26 +136,26 @@ modifierDeclaration = do
 
 {- Not really declarations -}
 
-tupleDeclaration :: [SolidityStorage] -> SolidityParser SolidityTuple
+tupleDeclaration :: [Storage] -> SolidityParser Tuple
 tupleDeclaration allowedStorage = 
   fmap TupleValue $ parens $ commaSep $ toArgDef <$>
   simpleVariableDeclaration allowedStorage
 
-visibilityModifier :: SolidityParser SolidityVisibility
+visibilityModifier :: SolidityParser Visibility
 visibilityModifier =
   (reserved "public" >> return PublicVisible) <|>
   (reserved "private" >> return PrivateVisible) <|>
   (reserved "internal" >> return InternalVisible) <|>
   (reserved "external" >> return ExternalVisible)
 
-storageModifier :: SolidityParser SolidityStorage
+storageModifier :: SolidityParser Storage
 storageModifier =
   (reserved "constant" >> return ValueStorage) <|>
   (reserved "storage" >> return StorageStorage) <|>
   (reserved "memory" >> return MemoryStorage) <|>
   (reserved "indexed" >> return IndexedStorage)
 
-variableModifiers :: SolidityStorage -> SolidityParser (SolidityBasicType -> SolidityVarDef)
+variableModifiers :: Storage -> SolidityParser (BasicType -> VarDef)
 variableModifiers defaultStorage =
   permute $ (\v s ->
     \variableType -> VarDef {
@@ -166,7 +166,7 @@ variableModifiers defaultStorage =
     (InternalVisible, visibilityModifier) <|?>
     (defaultStorage, storageModifier)
 
-functionModifiers :: SolidityParser (SolidityTuple -> SourceCode -> SolidityFuncDef)
+functionModifiers :: SolidityParser (Tuple -> SourceCode -> FuncDef)
 functionModifiers =
   permute $ (\r v s _ _ _ _ ->
     \args code -> FuncDef {
@@ -191,3 +191,4 @@ functionModifiers =
       name <- identifier
       args <- optionMaybe parensCode
       return $ name ++ maybe "" (\s -> "(" ++ s ++ ")") args
+
