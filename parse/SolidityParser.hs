@@ -28,7 +28,7 @@ addVar vName v = do
   modifyState $ second $
     \c@Contract{contractVars = DeclarationsBy{byName, byID}, contractStorageVars} ->
       c{contractVars = DeclarationsBy{
-          byName = Map.insertWith theError vName v byName,
+          byName = Map.insertWith theError vName vID byName,
           byID = Map.insertWith theError vID v byID
           },
         contractStorageVars =
@@ -55,7 +55,7 @@ addFunc fName f = do
           byName = 
             if funcIsConstructor f' || null fName
             then byName
-            else Map.insertWith theError fName f' byName,
+            else Map.insertWith theError fName fID byName,
           byID = Map.insertWith theError fID f' byID
           }
        }
@@ -67,7 +67,7 @@ addEvent eName e = do
   modifyState $ second $
     \c@Contract{contractEvents = DeclarationsBy{byName, byID}} ->
       c{contractEvents = DeclarationsBy{
-          byName = Map.insertWith theError eName e byName,
+          byName = Map.insertWith theError eName eID byName,
           byID = Map.insertWith theError eID e byID
           }
        }
@@ -79,7 +79,7 @@ addModifier mName m = do
   modifyState $ second $
     \c@Contract{contractModifiers = DeclarationsBy{byName, byID}} ->
       c{contractModifiers = DeclarationsBy{
-          byName = Map.insertWith theError mName m byName,
+          byName = Map.insertWith theError mName mID byName,
           byID = Map.insertWith theError mID m byID
           }
        }
@@ -91,7 +91,7 @@ addType tName t = do
   modifyState $ second $
     \c@Contract{contractTypes = DeclarationsBy{byName, byID}} ->
       c{contractTypes = DeclarationsBy{
-          byName = Map.insertWith theError tName t byName,
+          byName = Map.insertWith theError tName tID byName,
           byID = Map.insertWith theError tID t byID
           }
        }

@@ -4,7 +4,9 @@ module SolidityTypes where
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Data.List.NonEmpty
+import Data.List.NonEmpty (NonEmpty)
+import qualified Data.List.NonEmpty as NonEmpty
+
 import Text.Parsec (SourceName)
 import Numeric.Natural
 
@@ -37,7 +39,7 @@ data RoughStage = Incomplete | Complete
 -- Various declaration types
 data DeclarationsBy a =
   DeclarationsBy {
-    byName :: Map Identifier a,
+    byName :: Map Identifier DeclID,
     byID :: Map DeclID a
     }
 
@@ -97,8 +99,8 @@ type family StorageVars (stage :: Stage) where
   StorageVars 'AfterLayout = StorageVarsT 'Complete
   StorageVars _ = StorageVarsT 'Incomplete
 type family StorageVarsT (rstage :: RoughStage) where
-  StorageVars 'Incomplete = [DeclID]
-  StorageVars 'Complete = [WithPos DeclID]
+  StorageVarsT 'Incomplete = [DeclID]
+  StorageVarsT 'Complete = [WithPos DeclID]
 data WithPos a =
   WithPos {
     startPos :: Natural,
@@ -131,8 +133,8 @@ type family LinkageT (rstage :: RoughStage) where
   LinkageT 'Complete = LinkageData
 data LinkageData
   CompleteLinkage {
-    typedefsLinkage :: Map LinkID (LinkT 'Complete),
-    librariesLinkage :: [ContractName]
+    typesLinkage :: Map LinkID (LinkT 'Complete),
+    librariesLinkage :: [ContractID]
     }
 
 -- Type-related datatypes
@@ -141,8 +143,7 @@ type family NewType (stage :: Stage) where
   NewType _ = NewTypeT 'Incomplete
 data NewTypeT (rstage :: RoughStage) =
   Enum        { names  :: Identifiers rstage } |
-  Struct      { fields :: Fields rstage } |
-  ContractT   { contractT :: () }
+  Struct      { fields :: Fields rstage }
 type family Identifiers (rstage :: RoughStage) where
   Identifiers 'Incomplete = [Identifier]
   Identifiers 'Complete = WithPos [Identifier]
@@ -168,13 +169,13 @@ data instance LinkT 'Incomplete =
   UnqualifiedLink Identifier |
   QualifiedLink {
     linkQualifier :: Identifier,
-    linkType :: Identifier
+    linkName :: Identifier
     } deriving (Eq, Ord)
 data instance LinkT 'Complete =
-  PlainTypedef DeclID |
-  ContractTypedef ContractID |
-  InheritedTypedef DeclID |
-  LibraryTypedef DeclID
+  PlainLink DeclID |
+  ContractLink ContractID |
+  InheritedLink DeclID |
+  LibraryLink DeclID
  
 -- ID types
 type FileName = SourceName
@@ -238,8 +239,7 @@ emptyDeclsBy =
     }
 
 -- A convenient accessor
-typeSize :: NewType 'Complete -> Natural
+typeSize :: NewType 'AfterLayout -> Natural
 typeSize EnumPos{namesPos} = sizeOf namesPos
 typeSize StructPos{fieldsPos} = sizeOf fieldsPos
-typeSize ContractTPos{contractTPos} = sizeOf contractTPos
 

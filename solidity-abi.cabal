@@ -40,6 +40,9 @@ library
                        SolidityParser
                        Types
                        DAG
+                       Linkage
+                       BaseContracts
+                       FilePaths
                        Qualify
                        Inheritance
                        Files
