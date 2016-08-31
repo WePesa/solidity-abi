@@ -1,11 +1,11 @@
 {-# LANGUAGE NamedRecordPuns #-}
-module Inheritance (
-  doInheritance,
-  ImportError(..)
-  ) where
+module Inheritance (doInheritance) where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
+
+import Data.Aeson
+import qualified Data.ByteString.Lazy.Char8 as BSC8
 
 import Data.Bifunctor
 import Data.Foldable ()
@@ -19,7 +19,7 @@ import DAG
 import FilePaths
 import Qualify
 
-doInheritance :: SolidityFiles -> Either ImportError (ContractsByID 'AfterInheritance)
+doInheritance :: SolidityFiles -> ContractsByID 'AfterInheritance
 doInheritance files = do
   contractsL <- importAndLinearize $ fixAllPaths files
   return $ mergeBaseContracts $ makeContractsByID contractsL
@@ -28,8 +28,8 @@ makeContractsByID :: ContractsByFile 'AfterInheritance -> ContractsByID 'AfterIn
 makeContractsByID = Map.foldrWithKey combine Map.empty
   where combine k = Map.union . Map.mapKeys (ContractID k)
 
-importAndLinearize :: SolidityFiles -> Either ImportError (ContractsByFile 'AfterInheritance)
-importAndLinearize files = do
+importAndLinearize :: SolidityFiles -> ContractsByFile 'AfterInheritance
+importAndLinearize files = throwImportError $ do
   validateImports files
   let resolved = Map.mapWithKey (linearizeFile resolved) files
   return resolved
@@ -105,4 +105,16 @@ convertQualifyError m (LocalNameMissing x k) = MissingSymbol m k x
 convertQualifyError m (GlobalNameMissing x) = MissingImport m x
 convertQualifyError m (LocalNameDuplicate x k) = DuplicateSymbol m x k
 
+
+
+throwImportError :: ImportError -> a
+throwImportError (MissingImport fBase fName) =
+  error $ BSC8.unpack $ encode $ object [
+    "error" .= "importError",
+    "importError" .= "missingImport",
+    "missingImport" .= fName,
+    "inFile" .= fBase
+    ]
+
+throwImportError _ = error $ "An import error occurred, probably a cycle"
 

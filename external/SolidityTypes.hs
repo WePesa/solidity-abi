@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, NamedFieldPuns, DataKinds #-}
+{-# LANGUAGE TypeFamilies, NamedFieldPuns, DataKinds, DeriveFunctor #-}
 module SolidityTypes where
 
 import Data.Map (Map)
@@ -87,17 +87,17 @@ data FieldDef =
 
 newtype Tuple = TupleValue [ArgDef]
 
-data SolidityVisibility =
+data Visibility =
   PublicVisible | PrivateVisible | InternalVisible | ExternalVisible
 
-data SolidityStorage = 
+data Storage = 
   StorageStorage | MemoryStorage | IndexedStorage | ValueStorage | TypeStorage
-  deriving (Eq, Show)
+  deriving (Eq)
  
 -- Layout, inheritance, and linkage
 type family StorageVars (stage :: Stage) where
-  StorageVars 'AfterLayout = StorageVarsT 'Complete
-  StorageVars _ = StorageVarsT 'Incomplete
+  StorageVars 'AfterLayout = StorageVarsT 'Complete 
+  StorageVars _ = StorageVarsT 'Incomplete 
 type family StorageVarsT (rstage :: RoughStage) where
   StorageVarsT 'Incomplete = [DeclID]
   StorageVarsT 'Complete = [WithPos DeclID]
@@ -111,6 +111,7 @@ data WithPos a =
     sizeOf :: Natural,
     stored :: a
     }
+  deriving (Functor)
 
 type family BaseContracts (stage :: Stage) where
   BaseContracts 'AfterParsing = BaseContractsT 'Incomplete
@@ -125,15 +126,13 @@ data BaseContractsData =
     }
 
 type family Linkage (stage :: Stage) where
-  Linkage 'AfterParsing = LinkageT 'Incomplete
-  Linkage 'AfterInheritance = LinkageT 'Incomplete
-  Linkage _ = 'Complete
-type family LinkageT (rstage :: RoughStage) where
-  LinkageT 'Incomplete = Map LinkID (LinkT 'Incomplete)
-  LinkageT 'Complete = LinkageData
-data LinkageData
+  Linkage 'AfterLinkage = LinkageData 'AfterLinkage
+  Linkage 'AfterLayout = LinkageData 'AfterLayout
+  Linkage s = LinkageT s
+type LinkageT (s :: Stage) = Map LinkID (TypeLink s)
+data LinkageData (s :: Stage)
   CompleteLinkage {
-    typesLinkage :: Map LinkID (LinkT 'Complete),
+    typesLinkage :: LinkageT s,
     librariesLinkage :: [ContractID]
     }
 
@@ -148,8 +147,8 @@ type family Identifiers (rstage :: RoughStage) where
   Identifiers 'Incomplete = [Identifier]
   Identifiers 'Complete = WithPos [Identifier]
 type family Fields (rstage :: RoughStage) where
-  Fields 'Incomplete = [FieldsDef]
-  Fields 'Complete = WithPos [WithPos FieldsDef]
+  Fields 'Incomplete = [FieldDef]
+  Fields 'Complete = WithPos (Map Identifier (WithPos BasicType))
 
 data BasicType = 
   Boolean |
@@ -164,18 +163,24 @@ data BasicType =
   Mapping     { domType  :: BasicType, codType :: BasicType } |
   LinkT { linkTo :: LinkID }
 
-data family LinkT (rstage :: RoughStage) 
-data instance LinkT 'Incomplete =
+type family TypeLink (stage :: Stage) where
+  TypeLink 'AfterLayout = DetailedLink 'Complete,
+  TypeLink 'AfterLinkage = DetailedLink 'Incomplete,
+  TypeLink _ = RoughLink
+data RoughLink =
   UnqualifiedLink Identifier |
   QualifiedLink {
     linkQualifier :: Identifier,
     linkName :: Identifier
     } deriving (Eq, Ord)
-data instance LinkT 'Complete =
+data DetailedLink (rstage :: RoughStage)
   PlainLink DeclID |
   ContractLink ContractID |
   InheritedLink DeclID |
-  LibraryLink DeclID
+  LibraryLink (LibLink rstage)
+type family LibLink (rstage :: RoughStage) where
+  LibLink 'Incomplete = DeclID
+  LibLink 'Complete = WithPos DeclID
  
 -- ID types
 type FileName = SourceName
@@ -194,7 +199,7 @@ data DeclID =
 data LinkID = 
   LinkID {
     linkContract :: ContractID,
-    linkName :: LinkT 'Incomplete
+    linkName :: RoughLink
     } deriving (Eq, Ord)
 
 -- File-level types
@@ -242,4 +247,8 @@ emptyDeclsBy =
 typeSize :: NewType 'AfterLayout -> Natural
 typeSize EnumPos{namesPos} = sizeOf namesPos
 typeSize StructPos{fieldsPos} = sizeOf fieldsPos
+
+isStorageVar :: VarDef -> Bool
+isStorageVar VarDef{varStorage = StorageStorage} = True
+isStorageVar _ = False
 

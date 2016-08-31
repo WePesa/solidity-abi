@@ -1,261 +1,183 @@
-{-# LANGUAGE NamedFieldPuns #-}
-module JSON (parseToJSON) where
+{-# LANGUAGE OverloadedStrings, NamedFieldPuns, ViewPatterns, GeneralizedNewTypeInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+module JSON () where
 
-import Data.Aeson hiding (String)
-import qualified Data.Aeson as Aeson (Value(String))
-import Data.Aeson.Types (Pair)
-import Data.Bifunctor
-import qualified Data.Map as Map
 import Data.Map (Map)
-import qualified Data.List as List
-import Data.Maybe
-import Data.String
+import qualified Data.Map as Map
 
+import Data.Aeson
+import qualified Data.Aeson as Aeson (String)
+import qualified Data.HashMap as HashMap
+import qualified Data.NonEmpty as NonEmpty
+import qualified Data.Text as Text
+import qualified Data.Vector as Vector
+
+import Control.Monad.Trans.Reader
+import Data.Monoid
 import Numeric.Natural
 
-import qualified Data.HashMap.Strict as HashMap
-import qualified Data.Vector as Vector
-import qualified Data.Text as Text
-
-import Files (ImportError(..))
-import Layout
-import Parser
 import SolidityTypes
 import Selector
-import Structure
 
-convertImportError :: ImportError -> Value
-convertImportError (ImportCycle fBase) =
-  object [pair "importError" "importCycle", 
-          pair "inFile" fBase]
-convertImportError (MissingImport fBase fName) = 
-  object [pair "importError" "missingImport",
-          pair "missingImport" fName,
-          pair "inFile" fBase]
-convertImportError (MissingSymbol fBase symName fName) = 
-  object [pair "importError" "missingSymbol", 
-          pair "missingSymbol" symName, 
-          pair "fileName" fName, 
-          pair "inFile" fBase]
-convertImportError (DuplicateSymbol fBase fName symName) = 
-  object [pair "importError" "duplicateSymbol", 
-          pair "fileName" fName, 
-          pair "duplicateSymbol" symName, 
-          pair "inFile" fBase]
-convertImportError (DuplicateFile fName) = 
-  object [pair "importError" "duplicateFile", 
-          pair "fileName" "fName"]
+instance ToJSON (Contract 'AfterLayout) where
+  toJSON = object . contractToJSON
+  toEncoding = pairs . contractToJSON
 
-parseToJSON :: FileName -> Map FileName SourceCode -> Either Value Value
-parseToJSON name sources = do
-  contracts <- first convertImportError $ doContractStructure sources name
-  let layouts = doContractLayouts contracts
-      results = Map.mapWithKey (contractABI results layouts) layouts
-  return $ toJSON results
+newtype AssocJSON = AssocJSON {assocJSON :: [Pair]} deriving (Monoid)
 
-type ValueMap = Map Identifier Value
+instance KeyValue AssocJSON where
+  (.=) k (toJSON -> Object x) | HashMap.null x = AssocJSON []
+  (.=) k (toJSON -> Array x) | Vector.null x = AssocJSON []
+  (.=) k (toJSON -> String x) | Text.null x = AssocJSON []
+  (.=) k (toJSON -> Null) = AssocJSON []
+  (.=) k (toJSON -> v) = AssocJSON [(k, v)]
 
-data ContractABI =
-  ContractABI {
-    contractVarsABI :: ValueMap,
-    contractFuncsABI :: ValueMap,
-    contractEventsABI :: ValueMap,
-    contractTypesABI :: ValueMap, 
-    contractLibraryTypesABI :: Map ContractName ValueMap,
-    contractConstrABI :: ValueMap,
-    contractIsConcreteABI :: Bool,
-    contractLibraryABI :: Bool
-    }
+instance ToJSON AssocJSON where
+  toJSON = object . assocJSON
 
-instance ToJSON ContractABI where
-  toJSON (ContractABI v f e t tL c _ l) = object $ 
-    (nonempty "vars" v) ++
-    (nonempty "funcs" f) ++
-    (nonempty "events" e) ++
-    (nonempty "types" t) ++
-    (nonempty "libraryTypes" $ Map.mapWithKey nonempty tL) ++
-    (nonempty "constr" c) ++
-    (nonempty "library" l)
-
-contractABI :: Map ContractName ContractABI -> ContractsABIByName ->
-               ContractName -> SolidityContractABI -> ContractABI
-contractABI allABI allContracts name contract =
-  ContractABI {
-    contractVarsABI = varsABI name vars (contractStorageVars contract),
-    contractFuncsABI = funcsABI name allTypes (byName $ contractFuncs contract),
-    contractEventsABI = eventsABI name allTypes (byName $ contractEvents contract),
-    contractTypesABI = typesABI name (byName $ contractTypes contract),
-    contractLibraryTypesABI = libTypesABI allABI (contractLibraryTypes contract),
-    contractConstrABI = constrABI name (byID $ contractFuncs contract),
-    contractIsConcreteABI = contractIsConcrete contract,
-    contractLibraryABI = contractIsLibrary contract
-    }
-  where
-    vars = byID $ contractVars contract
-    allTypes = Map.foldr Map.union Map.empty $ Map.map (byID . contractTypes) allContracts
-
-constrABI :: ContractName -> Map DeclID SolidityFuncDef -> ValueMap
-constrABI cName funcs = 
-  maybe Map.empty (tupleABI cName . funcArgType) $ Map.lookup (DeclID cName cName) funcs
-
-varsABI :: ContractName -> Map DeclID SolidityVarDef -> [WithPos DeclID] -> ValueMap
-varsABI name vars varIDs = Map.fromList $ map makeVarAssoc varIDs
-  where
-    makeVarAssoc WithPos{startPos, stored = vID} =
-      (declName vID, varABI name startPos $ varType $ lookupWithError vID vars)
-    lookupWithError k m = Map.findWithDefault theError k m
-      where
-        theError = error $ "Couldn't find storage variable " ++ declName k ++ " in contract " ++ declContract k
-
-fieldsABI :: ContractName -> [WithPos SolidityFieldDef] -> ValueMap
-fieldsABI name = Map.fromList . map makeFieldAssoc
-  where
-    makeFieldAssoc WithPos{startPos, stored = fieldDef} =
-      (fieldName fieldDef, varABI name startPos $ fieldType fieldDef)
-
-funcsABI :: ContractName -> Map DeclID SolidityNewTypeABI -> 
-            Map Identifier SolidityFuncDef -> ValueMap
-funcsABI name allTypesL funcs = Map.mapWithKey (funcABI name allTypesL) funcs
-              
-eventsABI :: ContractName -> Map DeclID SolidityNewTypeABI -> 
-             Map Identifier SolidityEventDef -> ValueMap
-eventsABI name allTypesL events = Map.mapWithKey (eventABI name allTypesL) events
-
-typesABI :: ContractName -> Map Identifier SolidityNewTypeABI -> ValueMap
-typesABI name = Map.map (typeABI name)
-
-libTypesABI :: Map ContractName ContractABI -> [DeclID] -> Map ContractName ValueMap
-libTypesABI allABIs lIDs =
-  Map.filter (not . Map.null) $
-  Map.mapWithKey (\k abi -> Map.intersection (contractTypesABI abi) (Map.findWithDefault Map.empty k idMap)) allABIs
+contractToJSON :: (KeyValue kv) => Contract 'AfterLayout -> kv
+contractToJSON c = 
+  "vars" .= 
+    Map.map 
+      (storageMap Map.!)
+      (Map.filter isStorageVar $ defsByName $ contractVars c)
+      <>
+  "funcs" .= Map.mapWithKey (funcToJSON typesLinkage) (defsByName $ contractFuncs c) <>
+  "events" .= Map.mapWithKey (eventToJSON typesLinkage) (defsByName $ contractEvents c) <>
+  "types" .= 
+    Map.map 
+      (typeToJSON typesLinkage) 
+      (Map.mapKeys showDeclJSON $ byID $ contractTypes c) 
+      <>
+  "constr" .= (tupleToJSON . funcArgType) <$> (Map.lookup constrID $ bID $ contractFuncs c) <>
+  "library" .= contractIsLibrary c <>
+  "libraries" .= map contractName librariesLinkage <>
+  "storage" .= map (storageVarToJSON . fmap varType) (contractStorageVars c)
 
   where
-    idMap =
-      Map.fromList $
-      map (\DeclID{declContract, declName} -> (declContract, Map.singleton declName ())) lIDs
+    storageMap = Map.fromList $ zip (map stored $ contractStorageVars c) [0..]
+    defsByName declsBy = Map.map (byID declsBy Map.!) (byName declsBy)
+    CompleteLinkage{typesLinkage, librariesLinkage} = contractLinkage c
+    constrID = DeclID{declContract = cID, declName = contractName cID}
+    cID = NonEmpty.head $ allBases $ contractBases c
 
-tupleABI :: ContractName -> SolidityTuple -> ValueMap
-tupleABI cName (TupleValue args) = Map.fromList $ zipWith indexObjABI [0 :: Integer ..] args
+type JSONReader = Reader (Linkage 'AfterLayout)
+
+funcToJSON :: (ToJSON kv, KeyValue kv) => Identifier -> FuncDef -> JSONReader kv
+funcToJSON name func{funcArgType, funcValueType} = do
+  linkage <- ask
+  aJSON <- tupleToJSON funcArgType
+  vJSON <- tupleToJSON funcValueType
+  return $
+    "selector" .= selector linkage name funcArgType <>
+    "args" .= aJSON <>
+    "vals" .= vJSON
+
+eventToJSON :: (ToJSON kv, KeyValue kv) => Identifier -> EventDef -> JSONReader kv
+eventToJSON name event{eventTopics, eventIsAnonymous} = do
+  linkage <- ask
+  tJSON <- tupleToJSON eventTopics
+  return $
+    "selector" .= 
+      (if eventIsAnonymous then Nothing else Just $ selector linkage name eventTopics) <>
+    "topics" .= tJSON
+
+typeToJSON :: (ToJSON kv, KeyValue kv) => NewType 'AfterLayout -> JSONReader kv
+typeToJSON Enum{names} = return $
+  "type" .= "Enum" <>
+  "bytes" .= toInteger $ sizeOf names <>
+  "names" .= stored names
+typeToJSON Struct{fields = WithSize{sizeOf, stored}} = do
+  fJSON <- sequence $ Map.map storageVarToJSON stored
+  return $
+    "type" .= "Struct" <>
+    "bytes" .= toInteger sizeOf <>
+    "fields" .= fJSON
+
+tupleToJSON :: (ToJSON kv, KeyValue kv) => Tuple -> JSONReader kv
+tupleToJSON (TupleValue argsDef) = do
+  typesJSON <- mapM makeTypeJSON argsDef
+  return $ Map.fromList $ zipWith makeIndexAssoc [0..] typesJSON $ map argName argsDef 
+
   where
-    indexObjABI :: Integer -> SolidityArgDef -> (Identifier, Value)
-    indexObjABI i arg =
-      (realName, object $ (pair "index" i) : basicTypeABI cName (argType arg) ++ indexed)
-      where 
-        realName = if null name then "#" ++ show i else name
-        name = argName arg
-        indexed =
-          case argStorage arg of
-            IndexedStorage -> [pair "indexed" True]
-            _ -> [] 
+    makeTypeJSON ArgDef{argType, argStorage} = do
+      aJSON <- basicTypeJSON argType
+      return $
+        "indexed" .= argStorage == IndexedStorage <>
+        aJSON
+    makeIndexAssoc i aJSON name = (
+      if null name then "#" ++ show i else name, 
+      "index" .= i <>
+      aJSON
+      )
 
-varABI :: ContractName -> Natural -> SolidityBasicType -> Value
-varABI name startBytes t = object $ pair "atBytes" startBytes' : basicTypeABI name t
-  where startBytes' = toInteger startBytes
+storageVarToJSON :: (ToJSON kv, KeyValue kv) => WithPos BasicType -> JSONReader kv
+storageVarToJSON linkage varDef{startPos, stored} = do
+  typeABI <- basicTypeJSON linkage stored
+  return $
+    "atBytes" .= toInteger startPos <>
+    typeABI
 
-funcABI :: ContractName -> Map DeclID SolidityNewTypeABI -> Identifier ->
-           SolidityFuncDef -> Value
-funcABI cName allTypesL name func = object $
-  [pair "selector" $ selector allTypesL name args] ++
-  (nonempty "args" $ tupleABI cName args) ++
-  (nonempty "vals" $ tupleABI cName vals)
-  where
-    args = funcArgType func
-    vals = funcValueType func
+basicTypeJSON :: (ToJSON kv, KeyValue kv) => BasicType -> JSONReader kv
+basicTypeJSON t = case t of
+  Boolean -> return $
+    "type" .= "Bool"
+  Address -> return $ 
+    "type" .= "Address"
+  SignedInt b -> return $ 
+    "type" .= "Int" <>
+    "signed" .= True <>
+    "bytes" .= toInteger b
+  UnsignedInt b -> return $
+    "type" .= "Int" <>
+    "bytes" .= toInteger b
+  FixedBytes b -> return $
+    "type" .= "Bytes" <>
+    "bytes" .= toInteger b
+  DynamicBytes b -> return $
+    "type" .= "Bytes" <>
+    "dynamic" .= True
+  String -> return $
+    "type" .= "String" <>
+    "dynamic" .= True
+  FixedArray eT l -> do
+    eJSON <- basicTypeABI eT
+    return $ 
+      "type" .= "Array" <>
+      "length" .= toInteger l <>
+      "entry" .= eJSON
+  DynamicArray eT -> do
+    eJSON <- basicTypeABI eT
+    return $ 
+      "type" .= "Array" <>
+      "dynamic" .= True <>
+      "entry" .= eJSON
+  Mapping dT cT -> do
+    kJSON <- basicTypeABI dT
+    vJSON <- basicTypeABI cT
+    return $
+      "type" .= "Mapping" <>
+      "dynamic" .= True <>
+      "key" .= kJSON <>
+      "value" .= vJSON
+  LinkT linkID -> do
+    linkage <- ask
+    return $ case linkage Map.! linkID of
+      PlainLink dID ->
+        "linkedType" .= showDeclJSON dID
+      InheritedLink dID ->   
+        "linkedType" .= showDeclJSON dID
+      ContractLink cID ->
+        "linkedContract" .= contractName cID
+      LibraryLink WithSize{stored} ->
+        "linkedType" .= showDeclJSON stored <>
+        "library" .= declContract stored
 
-eventABI :: ContractName -> Map DeclID SolidityNewTypeABI -> Identifier -> 
-            SolidityEventDef -> Value
-eventABI cName allTypesL name event = object $ [pair "topics" $ tupleABI cName topics] ++ sig
-  where
-    sig = 
-      if eventIsAnonymous event
-      then []
-      else [pair "selector" $ selector allTypesL name topics]
-    topics = eventTopics event
+showDeclJSON :: DeclID -> String
+showDeclJSON DeclID{declContract, declName} = 
+  showContractJSON declContract ++ "." ++ declName
 
-typeABI :: ContractName -> SolidityNewTypeABI -> Value
-typeABI cName StructPos{fieldsPos = WithSize{sizeOf, stored = fieldsL}} =
-  object [
-    pair "type" "Struct",
-    pair "bytes" $ toInteger sizeOf,
-    pair "fields" $ fieldsABI cName fieldsL
-    ]
-typeABI _ EnumPos{namesPos = WithSize{sizeOf, stored = namesL}} =
-  object $ [
-    pair "type" "Enum",
-    pair "bytes" $ toInteger sizeOf,
-    pair "names" namesL
-    ]
-typeABI _ _ = error "Broken types layout or missing type definition"
-
-basicTypeABI :: ContractName -> SolidityBasicType -> [Pair]
-basicTypeABI _ Boolean = [pair "type" "Bool"]
-basicTypeABI _ Address = [pair "type" "Address"]
-basicTypeABI _ (SignedInt b) = [
-  pair "type" "Int",
-  pair "signed" True,
-  pair "bytes" $ toInteger b]
-basicTypeABI _ (UnsignedInt b) = [
-  pair "type" "Int",
-  pair "bytes" $ toInteger b
-  ]
-basicTypeABI _ (FixedBytes b) = [
-  pair "type" "Bytes",
-  pair "bytes" $ toInteger b
-  ]
-basicTypeABI _ DynamicBytes = [
-  pair "type" "Bytes",
-  pair "dynamic" True
-  ]
-basicTypeABI _ String = [
-  pair "type" "String",
-  pair "dynamic" True
-  ]
-basicTypeABI cName (FixedArray eT l) = [
-  pair "type" "Array",
-  pair "length" $ toInteger l,
-  tpair cName "entry" eT
-  ]
-basicTypeABI cName (DynamicArray eT) = [
-  pair "type" "Array",
-  pair "dynamic" True,
-  tpair cName "entry" eT
-  ]
-basicTypeABI cName (Mapping dT cT) = [
-  pair "type" "Mapping",
-  pair "dynamic" True,
-  tpair cName "key" dT,
-  tpair cName "value" cT
-  ]
-basicTypeABI cName (Typedef DeclID{declContract, declName}) =
-  [pair "typedef" declName] ++
-  if cName == declContract then [] else [pair "library" declContract]
-
-pair :: (ToJSON a) => String -> a -> Pair
-pair x y = (fromString x, toJSON y)
-
-tpair :: ContractName -> String -> SolidityBasicType -> Pair
-tpair cName x y = (fromString x, object $ basicTypeABI cName y)
-
-nonempty :: (ToJSON a) => String -> a -> [Pair]
-nonempty s x = nonempty' (pair s) $ toJSON x
-
-nonempty' :: (Value -> Pair) -> Value -> [Pair]
-nonempty' f ob@(Object o) =
-  if HashMap.null o
-  then []
-  else [f ob]
-nonempty' f ar@(Array a) =
-  if Vector.null a
-  then []
-  else [f ar]
-nonempty' f st@(Aeson.String s) =
-  if Text.null s
-  then []
-  else [f st]
-nonempty' f bl@(Bool b) =
-  if b
-  then [f bl]
-  else []
-nonempty' _ Null = []
-nonempty' f x = [f x]
+showContractJSON :: ContractID -> String
+showContractJSON ContractID{contractFile, contractName} =
+  "(file " ++ contractFile ++ ")." ++ contractName
 

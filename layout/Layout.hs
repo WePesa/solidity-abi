@@ -4,34 +4,42 @@ module Layout (doLayout) where
 import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
+
+import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
+import Control.Monad.Trans.State
 
 import LayoutTypes
 import SolidityTypes
 import DAG
 
 doLayout :: ContractsByID 'AfterLinkage -> ContractsbyID 'AfterLayout
-doLayout contracts = Map.map (doContractLayout contracts) contracts
+doLayout contracts = result
+  where result = Map.map (doContractLayout result) contracts
 
-doContractLayout :: ContractsByID 'AfterLinkage -> Contract 'AfterLinkage ->
+doContractLayout :: ContractsByID 'AfterLayout -> Contract 'AfterLinkage ->
                     Contract 'AfterLayout
-doContractLayout contracts contract =
+doContractLayout contracts contract{contractLinkage = CompleteLinkage{typesLinkage}} =
   contract{
     contractTypes = typesL,
-    contractStorageVars = varsL
+    contractStorageVars = varsL,
+    contractLinkage = contractLinkage{typesLinkage = newLibLinks}
     }
 
   where
-    (typesL, varsL) = runLayoutReader $ do
+    ((typesL, varsL), newLibLinks) = runLayoutM $ do
       typesByID <- mapM doTypeLayout cTypes
       varsL <- doVarsLayout (byID $ contractVars contract) (contractStorageVars contract)
       return (cTypes{byID = typesByID}, varsL)
-    runLayoutReader = flip runReader (contracts, byID typesL)
+    runLayoutM = 
+      flip runReader (contracts, byID typesL) . 
+      flip runStateT (typesLinkage $ contractLinkage contract)
     cTypes = byID $ contractTypes contract
 
-type LayoutReader = Reader (ContractsByID 'AfterLinkage, Map DeclID (NewType 'AfterLayout))
+type LayoutM = StateT (LinkageT 'AfterLayout) LayoutReader
+type LayoutReader = Reader (ContractsByID 'AfterLayout, Map DeclID (NewType 'AfterLayout))
 
-doTypeLayout :: NewType 'AfterLinkage -> LayoutReader (NewType 'AfterLayout)
+doTypeLayout :: NewType 'AfterLinkage -> LayoutM (NewType 'AfterLayout)
 doTypeLayout enum@Enum{names} = 
   return enum{
     names = WithSize{
@@ -44,23 +52,21 @@ doTypeLayout struct@Struct{fields} = do
   return struct{
     fields = WithSize{
       sizeOf = 1 + endPos (head fieldsLayout), -- fields are reversed
-      stored = zipWith makeFieldDefL fields fieldsLayout
+      stored = Map.fromList $ zipWith makeFieldDefL fields fieldsLayout
       }
     }
 
-  where
-    makeFieldDefL fD fDL@WithPos{startPos, endPos} = WithPos{startPos, endPos, stored = fD}
+  where makeFieldDefL fD fDL = (fieldName fd, const (fieldType fD) <$> fDL)
 
 doVarsLayout :: Map DeclID VarDef -> StorageVars 'AfterLinkage ->
-                LayoutReader (StorageVars 'AfterLayout)
+                LayoutM (StorageVars 'AfterLayout)
 doVarsLayout varDefs varIDs = do
   varLayouts <- doVarTypesLayout $ map (varType . (varDefs Map.!)) varIDs
-  return $ zipWith makeDeclIDL varIDs varLayouts 
+  return $ zipWith makePosID varIDs varLayouts 
 
-  where
-    makeDeclIDL vID WithPos{startPos, endPos} = WithPos{startPos, endPos, stored = vID}
+  where makePosID vID varPos = const vID <$> varPos
 
-doVarTypesLayout :: [BasicType] -> LayoutReader [WithPos ()]
+doVarTypesLayout :: [BasicType] -> LayoutM [WithPos ()]
 doVarTypesLayout =
   -- vars are listed from high storage to low; we work from the right
   foldr (\v vLs -> makeNextVarL v vLs) (return []) 
@@ -73,7 +79,7 @@ doVarTypesLayout =
           vL' <- doVarLayout (endPos vL + 1) v
           return $ vL' : l
 
-doVarLayout :: StorageBytes -> BasicType -> LayoutReader (WithPos ())
+doVarLayout :: StorageBytes -> BasicType -> LayoutM (WithPos ())
 doVarLayout lastOffEnd varT = do
   tUsed <- usedBytes varT
   let startPos = nextLayoutStart lastOffEnd tUsed
@@ -83,7 +89,7 @@ doVarLayout lastOffEnd varT = do
     stored = ()
     }
 
-usedBytes :: BasicType -> LayoutReader StorageBytes
+usedBytes :: BasicType -> LayoutM StorageBytes
 usedBytes t = case t of
   Boolean -> return 1
   Address -> return addressBytes
@@ -104,13 +110,18 @@ usedBytes t = case t of
   DynamicArray _ -> return keyBytes
   Mapping _ _ -> return keyBytes
   LinkT{linkTo} -> do
-    (contracts, typesL) <- ask 
-    case linkTo of
-      ContractLink _ -> addressBytes
-      _ -> typeSize $ case linkTo of
-        PlainLink dID -> typesL Map.! dID
-        InheritedLink dID -> typesL Map.! dID
-        LibraryLink dID{declContract} -> (contracts Map.! declContract) Map.! dID
+    (contracts, typesL) <- lift ask 
+    typeLinks <- get
+    let tLink = typeLinks Map.! linkTo
+    case tLink of
+      ContractLink _ -> return addressBytes
+      _ -> case tLink of
+        PlainLink dID -> return $ typeSize $ typesL Map.! dID
+        InheritedLink dID -> return $ typeSize $ typesL Map.! dID
+        LibraryLink (LibLinkID dID{declContract}) -> do
+          let tSize = typeSize $ (contracts Map.! declContract) Map.! dID
+          put $ Map.insert linkTo WithSize{sizeOf = tSize, stored = dID}
+          return tSize
 
 nextLayoutStart :: StorageBytes -> StorageBytes -> StorageBytes
 nextLayoutStart 0 _ = 0

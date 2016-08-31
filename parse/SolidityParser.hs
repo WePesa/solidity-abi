@@ -32,9 +32,9 @@ addVar vName v = do
           byID = Map.insertWith theError vID v byID
           },
         contractStorageVars =
-          case varStorage v of
-            StorageStorage -> vID:contractStorageVars
-            _ -> contractStorageVars
+          if isStorageVar v
+          then vID:contractStorageVars
+          else contractStorageVars
        }
 
 addFunc :: Identifier -> FuncDef -> SolidityParser ()

@@ -6,7 +6,8 @@ import File
 import SolidityParser
 import SolidityTypes
 
-parseSolidity :: FileName -> SourceCode -> Either ParseError SolidityFile
+parseSolidity :: FileName -> SourceCode -> SolidityFile
 parseSolidity fileName source = 
+  either (error . show) id $
   runParser (solidityFile fileName) (ContractID "" "", emptyContract) fileName source
 
