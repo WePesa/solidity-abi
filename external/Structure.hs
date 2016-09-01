@@ -4,7 +4,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 import SolidityTypes
-import Parse
+import Parser
 import Inheritance
 import Linkage
 import Layout
@@ -15,7 +15,7 @@ parseToStructure name =
   doLayout .
   doLinkage .
   doInheritance .
-  sequence . Map.mapWithKey parseSolidity
+  Map.mapWithKey parseSolidity
 
 getFileContracts :: FileName -> ContractsByID 'AfterLayout -> ContractsByName 'AfterLayout
 getFileContracts name = Map.mapKeys contractFile . Map.filterWithKey isInFile

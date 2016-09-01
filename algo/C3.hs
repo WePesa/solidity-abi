@@ -7,7 +7,7 @@ import Data.Semigroup
 import qualified Data.Map as Map
 
 import Prelude hiding (map, head, tail, dropWhile)
-import Prelude as P (map)
+import qualified Prelude as P (map)
 
 c3Linearize :: (Ord a) => Map a [a] -> Map a (NonEmpty a)
 c3Linearize xM = xLM
@@ -19,8 +19,8 @@ c3Memoize xLM x xDeps = c3Combine x $ P.map getDeps xDeps
     getDeps y = Map.findWithDefault (error $ "Invalid base class found") y xLM
 
 c3Combine :: (Eq a) => a -> [NonEmpty a] -> NonEmpty a
-c3Combine [] x = fromList [x]
-c3Combine xDepsL x  = x <| c3Merge (xDepsLNE <> fromList [xDepsNE])
+c3Combine x [] = fromList [x]
+c3Combine x xDepsL = x <| c3Merge (xDepsLNE <> fromList [xDepsNE])
   where
     xDepsLNE = fromList xDepsL
     xDepsNE = map head xDepsLNE

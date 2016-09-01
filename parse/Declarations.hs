@@ -71,7 +71,8 @@ usingDeclaration = do
   reserved "using"
   identifier
   reserved "for"
-  identifierPath
+  optional $ identifier >> dot
+  identifier
   semi
   return ()
 

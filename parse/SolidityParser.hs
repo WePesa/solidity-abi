@@ -7,7 +7,7 @@ import Data.Bifunctor
 import Text.Parsec
 import SolidityTypes
 
-type SolidityParser = Parsec SourceCode (ContractID, SolidityContract)
+type SolidityParser = Parsec SourceCode (ContractID, Contract 'AfterParsing)
 
 initContract :: FileName -> ContractName -> Bool -> SolidityParser ()
 initContract fileName name isLibrary = 
@@ -84,7 +84,7 @@ addModifier mName m = do
           }
        }
 
-addType :: Identifier -> NewType -> SolidityParser ()
+addType :: Identifier -> NewType 'AfterParsing -> SolidityParser ()
 addType tName t = do
   tID <- makeDeclID tName
   let theError = duplicateError "type" tID
@@ -101,12 +101,12 @@ addBase n = do
   (cID, _) <- getState
   let baseID = cID{contractName = n} -- Base names must be in the same file 
   modifyState $ second $
-    \c -> c(contractBases = baseID : contractBases c}
+    \c -> c{contractBases = baseID : contractBases c}
 
-newLinkage :: LinkT 'Incomplete -> SolidityParser LinkID
+newLinkage :: RoughLink -> SolidityParser LinkID
 newLinkage linkT = do
   (cID, _) <- getState
-  let linkID = LinkID { linkContract = cID, linkName = linkT }
+  let linkID = LinkID { linkContract = cID, linkIs = linkT }
   modifyState $ second $
     \c -> c{contractLinkage = Map.insert linkID linkT $ contractLinkage c}
   return linkID
@@ -115,8 +115,8 @@ getIsAbstract :: SolidityParser Bool
 getIsAbstract = not . contractIsConcrete . snd <$> getState
 
 duplicateError :: String -> DeclID -> a
-duplicateError name id =
-  error $ "Duplicate definition of " ++ name ++ declName id ++ " in contract " ++ declContract id
+duplicateError name dID =
+  error $ "Duplicate definition of " ++ name ++ declName dID ++ " in contract " ++ contractName (declContract dID) ++ " in file " ++ contractFile (declContract dID)
 
 toArgDef :: (Identifier, VarDef) -> ArgDef
 toArgDef (name, VarDef{varType, varStorage}) =

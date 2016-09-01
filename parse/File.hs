@@ -2,7 +2,7 @@
 module File (solidityFile) where
 
 import Data.Either
-import Data.Map (fromList)
+import qualified Data.Map as Map
 
 import Text.Parsec
 import Text.Parsec.Char
@@ -25,7 +25,7 @@ solidityFile fileName = do
   eof
   let (contractsAssoc, imports) = partitionEithers toplevel
   return SolidityFile {
-    fileContracts = fromList contractsAssoc,
+    fileContracts = Map.mapKeys contractName $ Map.fromList contractsAssoc,
     fileImports = imports
     }
  

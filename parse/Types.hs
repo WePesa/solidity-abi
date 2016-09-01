@@ -22,10 +22,10 @@ simpleType =
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
   LinkT <$> do
-    constr <- option UnqualifiedTypedef $ do
+    constr <- option UnqualifiedLink $ do
       qualifier <- identifier
       dot
-      return $ QualifiedTypedef qualifier
+      return $ QualifiedLink qualifier
     name <- identifier
     newLinkage $ constr name
   where

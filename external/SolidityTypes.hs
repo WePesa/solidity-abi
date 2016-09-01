@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeFamilies, NamedFieldPuns, DataKinds, DeriveFunctor #-}
+{-# LANGUAGE UndecidableInstances, TypeFamilies, DeriveFunctor #-}
 module SolidityTypes where
 
 import Data.Map (Map)
@@ -11,18 +11,19 @@ import Text.Parsec (SourceName)
 import Numeric.Natural
 
 -- The main data type
-data Contract (stage :: Stage)
+data Contract (stage :: Stage) =
   Contract {
+    -- These fields depend on the stage.
+    contractTypes :: DeclarationsBy (NewType stage),
+    contractStorageVars :: StorageVars stage, -- In order of decreasing storage location
+    contractBases :: BaseContracts stage, -- In order of increasingly base
+    contractLinkage :: Linkage stage,
+
+    -- These fields don't depend on the stage
     contractVars :: DeclarationsBy VarDef,
     contractFuncs :: DeclarationsBy FuncDef,
     contractEvents :: DeclarationsBy EventDef,
     contractModifiers :: DeclarationsBy ModifierDef,
-    contractTypes :: DeclarationsBy (NewType stage),
-    -- In order of decreasing storage location
-    contractStorageVars :: StorageVars stage,
-    -- In order of increasingly base
-    contractBases :: BaseContracts stage,
-    contractLinkage :: Linkage stage,
     contractIsConcrete :: Bool,
     contractIsLibrary :: Bool
     }
@@ -92,12 +93,12 @@ data Visibility =
 
 data Storage = 
   StorageStorage | MemoryStorage | IndexedStorage | ValueStorage | TypeStorage
-  deriving (Eq)
+  deriving (Eq, Show)
  
 -- Layout, inheritance, and linkage
 type family StorageVars (stage :: Stage) where
   StorageVars 'AfterLayout = StorageVarsT 'Complete 
-  StorageVars _ = StorageVarsT 'Incomplete 
+  StorageVars s = StorageVarsT 'Incomplete 
 type family StorageVarsT (rstage :: RoughStage) where
   StorageVarsT 'Incomplete = [DeclID]
   StorageVarsT 'Complete = [WithPos DeclID]
@@ -115,7 +116,7 @@ data WithPos a =
 
 type family BaseContracts (stage :: Stage) where
   BaseContracts 'AfterParsing = BaseContractsT 'Incomplete
-  BaseContracts _ = BaseContractsT 'Complete
+  BaseContracts s = BaseContractsT 'Complete
 type family BaseContractsT (rstage :: RoughStage) where
   BaseContractsT 'Incomplete = [ContractID]
   BaseContractsT 'Complete = BaseContractsData
@@ -130,7 +131,7 @@ type family Linkage (stage :: Stage) where
   Linkage 'AfterLayout = LinkageData 'AfterLayout
   Linkage s = LinkageT s
 type LinkageT (s :: Stage) = Map LinkID (TypeLink s)
-data LinkageData (s :: Stage)
+data LinkageData (s :: Stage) =
   CompleteLinkage {
     typesLinkage :: LinkageT s,
     librariesLinkage :: [ContractID]
@@ -139,7 +140,7 @@ data LinkageData (s :: Stage)
 -- Type-related datatypes
 type family NewType (stage :: Stage) where
   NewType 'AfterLayout = NewTypeT 'Complete
-  NewType _ = NewTypeT 'Incomplete
+  NewType s = NewTypeT 'Incomplete
 data NewTypeT (rstage :: RoughStage) =
   Enum        { names  :: Identifiers rstage } |
   Struct      { fields :: Fields rstage }
@@ -164,23 +165,23 @@ data BasicType =
   LinkT { linkTo :: LinkID }
 
 type family TypeLink (stage :: Stage) where
-  TypeLink 'AfterLayout = DetailedLink 'Complete,
-  TypeLink 'AfterLinkage = DetailedLink 'Incomplete,
-  TypeLink _ = RoughLink
+  TypeLink 'AfterLayout = DetailedLink 'Complete
+  TypeLink 'AfterLinkage = DetailedLink 'Incomplete
+  TypeLink s = RoughLink
 data RoughLink =
   UnqualifiedLink Identifier |
   QualifiedLink {
     linkQualifier :: Identifier,
     linkName :: Identifier
     } deriving (Eq, Ord)
-data DetailedLink (rstage :: RoughStage)
-  PlainLink DeclID |
-  ContractLink ContractID |
-  InheritedLink DeclID |
-  LibraryLink (LibLink rstage)
-type family LibLink (rstage :: RoughStage) where
-  LibLink 'Incomplete = DeclID
-  LibLink 'Complete = WithPos DeclID
+data DetailedLink (rstage :: RoughStage) =
+  PlainLink (DeclLink rstage) |
+  InheritedLink (DeclLink rstage) |
+  LibraryLink (DeclLink rstage) |
+  ContractLink ContractID
+type family DeclLink (rstage :: RoughStage) where
+  DeclLink 'Incomplete = DeclID
+  DeclLink 'Complete = WithPos DeclID
  
 -- ID types
 type FileName = SourceName
@@ -199,7 +200,7 @@ data DeclID =
 data LinkID = 
   LinkID {
     linkContract :: ContractID,
-    linkName :: RoughLink
+    linkIs :: RoughLink
     } deriving (Eq, Ord)
 
 -- File-level types
@@ -224,14 +225,15 @@ type SolidityFiles = Map FileName SolidityFile
 emptyContract :: Contract 'AfterParsing
 emptyContract = 
   Contract {
+    contractTypes = emptyDeclsBy,
     contractStorageVars = [],
+    contractBases = [],
+    contractLinkage = Map.empty,
+
     contractVars = emptyDeclsBy,
     contractFuncs = emptyDeclsBy,
     contractEvents = emptyDeclsBy,
     contractModifiers = emptyDeclsBy,
-    contractTypes = emptyDeclsBy,
-    contractLinkage = Map.empty,
-    contractBases = [],
     contractIsConcrete = True,
     contractIsLibrary = False
     }
@@ -245,8 +247,8 @@ emptyDeclsBy =
 
 -- A convenient accessor
 typeSize :: NewType 'AfterLayout -> Natural
-typeSize EnumPos{namesPos} = sizeOf namesPos
-typeSize StructPos{fieldsPos} = sizeOf fieldsPos
+typeSize Enum{names} = sizeOf names
+typeSize Struct{fields} = sizeOf fields
 
 isStorageVar :: VarDef -> Bool
 isStorageVar VarDef{varStorage = StorageStorage} = True

@@ -1,14 +1,17 @@
-{-# LANGUAGE OverloadedStrings, NamedFieldPuns, ViewPatterns, GeneralizedNewTypeInstances #-}
+{-# LANGUAGE OverloadedStrings, ViewPatterns, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleInstances, ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 module JSON () where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Data.Aeson
-import qualified Data.Aeson as Aeson (String)
-import qualified Data.HashMap as HashMap
-import qualified Data.NonEmpty as NonEmpty
+import Data.Aeson hiding ((.=), Value(String))
+import Data.Aeson.Types (Pair)
+import qualified Data.Aeson as Aeson ((.=), Value(String))
+import qualified Data.HashMap.Strict as HashMap
+import qualified Data.List.NonEmpty as NonEmpty
+import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Vector as Vector
 
@@ -19,91 +22,104 @@ import Numeric.Natural
 import SolidityTypes
 import Selector
 
-instance ToJSON (Contract 'AfterLayout) where
-  toJSON = object . contractToJSON
-  toEncoding = pairs . contractToJSON
-
 newtype AssocJSON = AssocJSON {assocJSON :: [Pair]} deriving (Monoid)
-
-instance KeyValue AssocJSON where
-  (.=) k (toJSON -> Object x) | HashMap.null x = AssocJSON []
-  (.=) k (toJSON -> Array x) | Vector.null x = AssocJSON []
-  (.=) k (toJSON -> String x) | Text.null x = AssocJSON []
-  (.=) k (toJSON -> Null) = AssocJSON []
-  (.=) k (toJSON -> v) = AssocJSON [(k, v)]
 
 instance ToJSON AssocJSON where
   toJSON = object . assocJSON
 
-contractToJSON :: (KeyValue kv) => Contract 'AfterLayout -> kv
-contractToJSON c = 
-  "vars" .= 
-    Map.map 
-      (storageMap Map.!)
-      (Map.filter isStorageVar $ defsByName $ contractVars c)
-      <>
-  "funcs" .= Map.mapWithKey (funcToJSON typesLinkage) (defsByName $ contractFuncs c) <>
-  "events" .= Map.mapWithKey (eventToJSON typesLinkage) (defsByName $ contractEvents c) <>
-  "types" .= 
-    Map.map 
-      (typeToJSON typesLinkage) 
-      (Map.mapKeys showDeclJSON $ byID $ contractTypes c) 
-      <>
-  "constr" .= (tupleToJSON . funcArgType) <$> (Map.lookup constrID $ bID $ contractFuncs c) <>
-  "library" .= contractIsLibrary c <>
-  "libraries" .= map contractName librariesLinkage <>
-  "storage" .= map (storageVarToJSON . fmap varType) (contractStorageVars c)
+class (Monoid kv, ToJSON kv) => KeyValue kv where
+  (.=) :: (ToJSON v) => Text -> v -> kv
+
+instance KeyValue AssocJSON where
+  (.=) k (toJSON -> Object x) | HashMap.null x = AssocJSON []
+  (.=) k (toJSON -> Array x) | Vector.null x = AssocJSON []
+  (.=) k (toJSON -> Aeson.String x) | Text.null x = AssocJSON []
+  (.=) k (toJSON -> Null) = AssocJSON []
+  (.=) k (toJSON -> v) = AssocJSON [k Aeson..= v]
+
+instance ToJSON (Contract 'AfterLayout) where
+  toJSON c = toJSON (contractToJSON c :: AssocJSON)
+--  toEncoding = pairs . contractToJSON
+
+contractToJSON :: forall kv. (KeyValue kv) => Contract 'AfterLayout -> kv
+contractToJSON c = flip runReader typesLinkage $ do
+  sJSON :: [kv] <- sequence $
+    map (storageVarToJSON . fmap getVarType) (contractStorageVars c)
+  fJSON :: Map Identifier kv <- sequence $
+    Map.mapWithKey funcToJSON (defsByName $ contractFuncs c)
+  eJSON :: Map Identifier kv <- sequence $ 
+    Map.mapWithKey eventToJSON (defsByName $ contractEvents c)
+  tJSON :: Map String kv <- sequence $ 
+    Map.map typeToJSON (Map.mapKeys showDeclJSON $ byID $ contractTypes c) 
+  cJSON :: Maybe (Map Identifier kv) <- sequence $
+    (tupleToJSON . funcArgType) <$> (Map.lookup constrID $ byID $ contractFuncs c)
+  return $
+    "storage" .= sJSON <>
+    "funcs" .= fJSON <>
+    "events" .= eJSON <>
+    "types" .= tJSON <>
+    "constr" .= cJSON <>
+    "library" .= contractIsLibrary c <>
+    "libraries" .= map contractName librariesLinkage <>
+    "vars" .= 
+      Map.map (storageMap Map.!) (
+        (byName $ contractVars c)
+        `Map.intersection`
+        (Map.filter isStorageVar $ defsByName $ contractVars c)
+        )
 
   where
-    storageMap = Map.fromList $ zip (map stored $ contractStorageVars c) [0..]
+    getVarType = varType . (byID (contractVars c) Map.!)
+    storageMap = Map.fromList $ zip (map stored $ contractStorageVars c) [0::Integer ..]
     defsByName declsBy = Map.map (byID declsBy Map.!) (byName declsBy)
     CompleteLinkage{typesLinkage, librariesLinkage} = contractLinkage c
     constrID = DeclID{declContract = cID, declName = contractName cID}
     cID = NonEmpty.head $ allBases $ contractBases c
 
-type JSONReader = Reader (Linkage 'AfterLayout)
+type JSONReader = Reader (LinkageT 'AfterLayout)
 
-funcToJSON :: (ToJSON kv, KeyValue kv) => Identifier -> FuncDef -> JSONReader kv
-funcToJSON name func{funcArgType, funcValueType} = do
+funcToJSON :: forall kv. (KeyValue kv) => Identifier -> FuncDef -> JSONReader kv
+funcToJSON name FuncDef{funcArgType, funcValueType} = do
   linkage <- ask
-  aJSON <- tupleToJSON funcArgType
-  vJSON <- tupleToJSON funcValueType
+  aJSON :: Map Identifier kv <- tupleToJSON funcArgType
+  vJSON :: Map Identifier kv <- tupleToJSON funcValueType
   return $
     "selector" .= selector linkage name funcArgType <>
     "args" .= aJSON <>
     "vals" .= vJSON
 
-eventToJSON :: (ToJSON kv, KeyValue kv) => Identifier -> EventDef -> JSONReader kv
-eventToJSON name event{eventTopics, eventIsAnonymous} = do
+eventToJSON :: forall kv. (KeyValue kv) => Identifier -> EventDef -> JSONReader kv
+eventToJSON name EventDef{eventTopics, eventIsAnonymous} = do
   linkage <- ask
-  tJSON <- tupleToJSON eventTopics
+  tJSON :: Map Identifier kv <- tupleToJSON eventTopics
   return $
     "selector" .= 
       (if eventIsAnonymous then Nothing else Just $ selector linkage name eventTopics) <>
     "topics" .= tJSON
 
-typeToJSON :: (ToJSON kv, KeyValue kv) => NewType 'AfterLayout -> JSONReader kv
+typeToJSON :: forall kv. (KeyValue kv) => NewType 'AfterLayout -> JSONReader kv
 typeToJSON Enum{names} = return $
-  "type" .= "Enum" <>
-  "bytes" .= toInteger $ sizeOf names <>
+  "type" .= ("Enum" :: Text) <>
+  "bytes" .= toInteger (sizeOf names) <>
   "names" .= stored names
 typeToJSON Struct{fields = WithSize{sizeOf, stored}} = do
-  fJSON <- sequence $ Map.map storageVarToJSON stored
+  fJSON :: Map Identifier kv <- sequence $ Map.map storageVarToJSON stored
   return $
-    "type" .= "Struct" <>
+    "type" .= ("Struct" :: Text) <>
     "bytes" .= toInteger sizeOf <>
     "fields" .= fJSON
 
-tupleToJSON :: (ToJSON kv, KeyValue kv) => Tuple -> JSONReader kv
+tupleToJSON :: forall kv. (KeyValue kv) => Tuple -> JSONReader (Map Identifier kv)
 tupleToJSON (TupleValue argsDef) = do
-  typesJSON <- mapM makeTypeJSON argsDef
-  return $ Map.fromList $ zipWith makeIndexAssoc [0..] typesJSON $ map argName argsDef 
+  typesJSON :: [kv] <- mapM makeTypeJSON argsDef
+  return $ Map.fromList $ 
+    zipWith3 makeIndexAssoc [0::Integer ..] typesJSON $ map argName argsDef 
 
   where
     makeTypeJSON ArgDef{argType, argStorage} = do
-      aJSON <- basicTypeJSON argType
+      aJSON :: kv <- basicTypeJSON argType
       return $
-        "indexed" .= argStorage == IndexedStorage <>
+        "indexed" .= (argStorage == IndexedStorage) <>
         aJSON
     makeIndexAssoc i aJSON name = (
       if null name then "#" ++ show i else name, 
@@ -111,67 +127,67 @@ tupleToJSON (TupleValue argsDef) = do
       aJSON
       )
 
-storageVarToJSON :: (ToJSON kv, KeyValue kv) => WithPos BasicType -> JSONReader kv
-storageVarToJSON linkage varDef{startPos, stored} = do
-  typeABI <- basicTypeJSON linkage stored
+storageVarToJSON :: (KeyValue kv) => WithPos BasicType -> JSONReader kv
+storageVarToJSON WithPos{startPos, stored} = do
+  typeABI :: kv <- basicTypeJSON stored
   return $
     "atBytes" .= toInteger startPos <>
     typeABI
 
-basicTypeJSON :: (ToJSON kv, KeyValue kv) => BasicType -> JSONReader kv
+basicTypeJSON :: forall kv. (KeyValue kv) => BasicType -> JSONReader kv
 basicTypeJSON t = case t of
   Boolean -> return $
-    "type" .= "Bool"
+    "type" .= ("Bool" :: Text)
   Address -> return $ 
-    "type" .= "Address"
+    "type" .= ("Address" :: Text)
   SignedInt b -> return $ 
-    "type" .= "Int" <>
+    "type" .= ("Int" :: Text) <>
     "signed" .= True <>
     "bytes" .= toInteger b
   UnsignedInt b -> return $
-    "type" .= "Int" <>
+    "type" .= ("Int" :: Text) <>
     "bytes" .= toInteger b
   FixedBytes b -> return $
-    "type" .= "Bytes" <>
+    "type" .= ("Bytes" :: Text) <>
     "bytes" .= toInteger b
-  DynamicBytes b -> return $
-    "type" .= "Bytes" <>
+  DynamicBytes -> return $
+    "type" .= ("Bytes" :: Text) <>
     "dynamic" .= True
   String -> return $
-    "type" .= "String" <>
+    "type" .= ("String" :: Text) <>
     "dynamic" .= True
   FixedArray eT l -> do
-    eJSON <- basicTypeABI eT
+    eJSON :: kv <- basicTypeJSON eT
     return $ 
-      "type" .= "Array" <>
+      "type" .= ("Array" :: Text) <>
       "length" .= toInteger l <>
       "entry" .= eJSON
   DynamicArray eT -> do
-    eJSON <- basicTypeABI eT
+    eJSON :: kv <- basicTypeJSON eT
     return $ 
-      "type" .= "Array" <>
+      "type" .= ("Array" :: Text) <>
       "dynamic" .= True <>
       "entry" .= eJSON
   Mapping dT cT -> do
-    kJSON <- basicTypeABI dT
-    vJSON <- basicTypeABI cT
+    kJSON :: kv <- basicTypeJSON dT
+    vJSON :: kv <- basicTypeJSON cT
     return $
-      "type" .= "Mapping" <>
+      "type" .= ("Mapping" :: Text) <>
       "dynamic" .= True <>
       "key" .= kJSON <>
       "value" .= vJSON
   LinkT linkID -> do
     linkage <- ask
     return $ case linkage Map.! linkID of
-      PlainLink dID ->
-        "linkedType" .= showDeclJSON dID
-      InheritedLink dID ->   
-        "linkedType" .= showDeclJSON dID
+      PlainLink WithSize{stored} ->
+        "linkedType" .= showDeclJSON stored
+      InheritedLink WithSize{stored} ->   
+        "linkedType" .= showDeclJSON stored
       ContractLink cID ->
         "linkedContract" .= contractName cID
       LibraryLink WithSize{stored} ->
         "linkedType" .= showDeclJSON stored <>
-        "library" .= declContract stored
+        "library" .= contractName (declContract stored)
 
 showDeclJSON :: DeclID -> String
 showDeclJSON DeclID{declContract, declName} = 
