@@ -71,7 +71,7 @@ usingDeclaration = do
   reserved "using"
   identifier
   reserved "for"
-  optional $ identifier >> dot
+  optional $ try (identifier >> dot)
   identifier
   semi
   return ()

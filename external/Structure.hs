@@ -11,6 +11,7 @@ import Layout
 
 parseToStructure :: FileName -> Map FileName SourceCode -> ContractsByName 'AfterLayout
 parseToStructure name =
+  Map.filter contractIsConcrete .
   getFileContracts name .
   doLayout .
   doLinkage .
@@ -18,6 +19,6 @@ parseToStructure name =
   Map.mapWithKey parseSolidity
 
 getFileContracts :: FileName -> ContractsByID 'AfterLayout -> ContractsByName 'AfterLayout
-getFileContracts name = Map.mapKeys contractFile . Map.filterWithKey isInFile
+getFileContracts name = Map.mapKeys contractName . Map.filterWithKey isInFile
   where isInFile ContractID{contractFile} _ = name == contractFile
 

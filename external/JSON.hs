@@ -34,6 +34,7 @@ instance KeyValue AssocJSON where
   (.=) k (toJSON -> Object x) | HashMap.null x = AssocJSON []
   (.=) k (toJSON -> Array x) | Vector.null x = AssocJSON []
   (.=) k (toJSON -> Aeson.String x) | Text.null x = AssocJSON []
+  (.=) k (toJSON -> Bool x) | not x = AssocJSON []
   (.=) k (toJSON -> Null) = AssocJSON []
   (.=) k (toJSON -> v) = AssocJSON [k Aeson..= v]
 
@@ -44,7 +45,7 @@ instance ToJSON (Contract 'AfterLayout) where
 contractToJSON :: forall kv. (KeyValue kv) => Contract 'AfterLayout -> kv
 contractToJSON c = flip runReader typesLinkage $ do
   sJSON :: [kv] <- sequence $
-    map (storageVarToJSON . fmap getVarType) (contractStorageVars c)
+    map (storageVarToJSON . fmap getVarType) storageList
   fJSON :: Map Identifier kv <- sequence $
     Map.mapWithKey funcToJSON (defsByName $ contractFuncs c)
   eJSON :: Map Identifier kv <- sequence $ 
@@ -70,7 +71,8 @@ contractToJSON c = flip runReader typesLinkage $ do
 
   where
     getVarType = varType . (byID (contractVars c) Map.!)
-    storageMap = Map.fromList $ zip (map stored $ contractStorageVars c) [0::Integer ..]
+    storageList = reverse $ contractStorageVars c
+    storageMap = Map.fromList $ zip (map stored storageList) [0::Integer ..]
     defsByName declsBy = Map.map (byID declsBy Map.!) (byName declsBy)
     CompleteLinkage{typesLinkage, librariesLinkage} = contractLinkage c
     constrID = DeclID{declContract = cID, declName = contractName cID}
@@ -191,9 +193,9 @@ basicTypeJSON t = case t of
 
 showDeclJSON :: DeclID -> String
 showDeclJSON DeclID{declContract, declName} = 
-  showContractJSON declContract ++ "." ++ declName
+  showContractJSON declContract ++ "::" ++ declName
 
 showContractJSON :: ContractID -> String
 showContractJSON ContractID{contractFile, contractName} =
-  "(file " ++ contractFile ++ ")." ++ contractName
+  contractFile ++ "::" ++ contractName
 

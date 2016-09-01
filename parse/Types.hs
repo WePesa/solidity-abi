@@ -22,12 +22,13 @@ simpleType =
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
   LinkT <$> do
-    constr <- option UnqualifiedLink $ do
-      qualifier <- identifier
-      dot
-      return $ QualifiedLink qualifier
-    name <- identifier
-    newLinkage $ constr name
+    parts <- sepBy1 identifier dot
+    newLink <- case parts of
+      [x] -> return $ UnqualifiedLink x
+      [x, y] -> return $ QualifiedLink x y
+      [x, y, z] -> return $ QualifiedLink (x ++ "." ++ y) z
+      _ -> fail "Too many qualifiers in type name"
+    newLinkage newLink
   where
     simple name nameType = do
       reserved name

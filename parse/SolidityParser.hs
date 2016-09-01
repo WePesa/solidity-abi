@@ -50,14 +50,15 @@ addFunc fName f = do
               ) ++ " in contract " ++ contractName (declContract fID)
                 ++ " in file " ++ contractFile (declContract fID)
   modifyState $ second $
-    \c@Contract{contractFuncs = DeclarationsBy{byName, byID}} ->
+    \c@Contract{contractFuncs = DeclarationsBy{byName, byID}, contractIsConcrete} ->
       c{contractFuncs = DeclarationsBy{
           byName = 
             if funcIsConstructor f' || null fName
             then byName
             else Map.insertWith theError fName fID byName,
           byID = Map.insertWith theError fID f' byID
-          }
+          },
+        contractIsConcrete = contractIsConcrete && funcHasCode f'
        }
 
 addEvent :: Identifier -> EventDef -> SolidityParser ()
