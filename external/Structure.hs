@@ -9,16 +9,17 @@ import Inheritance
 import Linkage
 import Layout
 
-parseToStructure :: FileName -> Map FileName SourceCode -> ContractsByName 'AfterLayout
-parseToStructure name =
+parseToStructure :: Map FileName SourceCode -> ContractsByFile 'AfterLayout
+parseToStructure =
+  makeContractsByFile .
   Map.filter contractIsConcrete .
-  getFileContracts name .
   doLayout .
   doLinkage .
   doInheritance .
   Map.mapWithKey parseSolidity
 
-getFileContracts :: FileName -> ContractsByID 'AfterLayout -> ContractsByName 'AfterLayout
-getFileContracts name = Map.mapKeys contractName . Map.filterWithKey isInFile
-  where isInFile ContractID{contractFile} _ = name == contractFile
+makeContractsByFile :: ContractsByID 'AfterLayout -> ContractsByFile 'AfterLayout
+makeContractsByFile = 
+  Map.map (Map.fromList) . Map.fromListWith (++) . Map.foldrWithKey pushAssoc []
+  where pushAssoc cID c = ( (contractFile cID, [(contractName cID, c)]) : )
 

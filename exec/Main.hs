@@ -20,5 +20,5 @@ main = do
       f -> readFile f
     importMap <- sequence $ Map.fromList $ zip imports $ map readFile imports
     return (mainFile, Map.insert mainFile mainSrc importMap)
-  BS.putStr $ Aeson.encodePretty $ parseToStructure mainFile sourceMap 
+  BS.putStr $ Aeson.encodePretty $ parseToStructure sourceMap Map.! mainFile 
 
