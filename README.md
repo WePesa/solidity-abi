@@ -19,7 +19,18 @@ import Blockchain.Ethereum.Solidity.External.JSON
 import Blockchain.Ethereum.Solidity.External.Contract
 ```
 
-This object (the "ABI") has the following structure:
+## Unsuccessful output
+Most errors in parsing will emit en error message and quit immediately.  If the error is a missing import, the result is instead the successful output of a JSON object:
+```js
+missingImport = {
+  "missingImport": <file path>
+}
+```
+containing the first missing import encountered.
+
+## Successful output
+Upon successful parsing, `solidity-abi` returns a JSON object object (the
+"ABI") with the following structure:
 
 ### File level
 ```js

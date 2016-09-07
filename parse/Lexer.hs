@@ -1,3 +1,7 @@
+-- |
+-- Module: Lexer
+-- Description: Parsers for various lexical elements of a Solidity source
+-- Maintainer: Ryan Reich <ryan@blockapps.net>
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Lexer where
 
@@ -7,11 +11,13 @@ import qualified Text.Parsec.Token as P
 
 import ParserTypes
 
+-- | A common pattern: code enclosed in braces, allowing nested braces.
 bracedCode :: SolidityParser String
 bracedCode = braces $ fmap concat $ many $ (many1 $ noneOf "{}") <|> do
   innerBraces <- bracedCode
   return $ "{" ++ innerBraces ++ "}"
 
+-- | Similar parser for parenthesized expressions
 parensCode :: SolidityParser String
 parensCode = parens $ fmap concat $ many $ (many1 $ noneOf "()") <|> do
   innerParens <- parensCode
