@@ -1,22 +1,36 @@
-module Layout (
-  layout,
-  SolidityFileLayout, SolidityContractsLayout,
-  SolidityTypesLayout, SolidityObjsLayout,
-  SolidityContractLayout(..), SolidityTypeLayout(..),
-  SolidityObjLayout(..),
-  StorageBytes
-  ) where
+-- |
+-- Module: Layout
+-- Description: Function for assigning storage locations to variables and
+--   types in a parsed contract.
+-- Maintainer: Ryan Reich <ryan@blockapps.net>
+module Layout (makeContractsLayout) where
 
 import qualified Data.Map as Map
 
 import Data.Maybe
 
+import DefnTypes
 import ParserTypes
 import LayoutTypes
 
-layout :: SolidityFile -> SolidityFileLayout
-layout = makeContractsLayout . makeContractsDef
-
+-- | 'makeContractsLayout' analyzes the ordered list of global storage
+-- variables and assigns them byte locations in the blockchain contract's
+-- storage.
+--
+-- Here are the rather picky rules for this:
+-- 
+-- * Every type has a size.  Most of the basic types have fixed sizes, in
+-- many cases given in the declaration, but a few of them are "dynamic",
+-- meaning that their actual values are stored in runtime-determined
+-- storage locations.  Nonetheless, these also have sizes for the purpose
+-- of this layout; their size is always 32 bytes.
+-- * In general, variables are laid out contiguously in order of
+-- declaration.  This includes fields of structs and elements of arrays.
+-- * The first exception to this is that no variable may cross a 32-byte
+-- boundary.  If it would, it gets moved to the next 32-byte slot.
+-- * The second exception to this is that struct and array variables always
+-- start and end in their own 32-byte slot.  That is, they start on
+-- a 32-byte boundary and the following variable does as well.
 makeContractsLayout :: SolidityContractsDef -> SolidityContractsLayout
 makeContractsLayout contracts = contractsL
   where contractsL = Map.map (makeContractLayout contractsL) contracts
@@ -34,18 +48,22 @@ makeTypeLayout :: SolidityContractsLayout -> SolidityTypesLayout -> SolidityNewT
                    -> SolidityTypeLayout
 makeTypeLayout contractsL typesL t = case t of
   ContractT -> ContractTLayout addressBytes
-  Enum names' -> EnumLayout (ceiling $ logBase (8::Double) $ fromIntegral $ length names')
+  Enum names' -> EnumLayout (ceiling $ logBase (256::Double) $ fromIntegral $ length names')
   Using contract name ->
-    UsingLayout (typeUsedBytes $ typesLayout (contractsL Map.! contract) Map.! name)
+    UsingLayout (typeUsedBytes $ getType name $ typesLayout (getContract contract contractsL))
+    where
+      getContract contract' = Map.findWithDefault (error $ "contract " ++ show contract' ++ " not found in contractsL") contract'
+      getType name' = Map.findWithDefault (error $ "type " ++ show name' ++ "not found in typesLayout") name'
   Struct fields' ->
     let objsLayout' = makeObjsLayout typesL fields'
-        lastEnd = objEndBytes $ objsLayout' Map.! (objName $ last fields')
+        lastEnd = objEndBytes $ getObj (objName $ last fields') objsLayout' 
+        getObj name' = Map.findWithDefault (error $ "struct name " ++ show name' ++ " not found in objsLayout'") name'
         usedBytes = nextLayoutStart lastEnd keyBytes        
     in StructLayout objsLayout' usedBytes
 
 makeObjsLayout :: SolidityTypesLayout -> [SolidityObjDef] -> SolidityObjsLayout
 makeObjsLayout typesL objs =
-  let objsLf = catMaybes $ map (makeObjLayout typesL) objs
+  let objsLf = mapMaybe (makeObjLayout typesL) objs
       objOffEnds = 0:map ((+1) . objEndBytes . snd) objsL
       objsL = zipWith ($) objsLf objOffEnds
   in Map.fromList  objsL
@@ -96,6 +114,6 @@ nextLayoutStart lastOffEnd thisSize =
       endKey0 = bytesToKey thisEnd0
       lastEndKey = bytesToKey lastEnd
       thisStart1 = keyToBytes $ lastEndKey + 1
-  in  if (startKey0 == endKey0)
+  in  if startKey0 == endKey0
       then thisStart0
       else thisStart1

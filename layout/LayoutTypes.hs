@@ -1,90 +1,32 @@
+-- |
+-- Module: LayoutTypes
+-- Description: Types for representing the storage layout of types and
+--   variables in a parsed contract.
+-- Maintainer: Ryan Reich <ryan@blockapps.net>
 module LayoutTypes where
 
-import qualified Data.Map as Map
 import Data.Map (Map)
-
-import qualified Data.List as List
-
-import Data.Function
-import Data.Monoid
-import Data.Maybe
 import Numeric.Natural
 
 import ParserTypes
 
+-- | The same as in DefnTypes
 type IdentT a = Map Identifier a
 
-data SolidityContractDef =
-  ContractDef {
-    objsDef :: SolidityObjsDef,
-    typesDef :: SolidityTypesDef,
-    inherits :: [(ContractName, SolidityContractDef)]
-    } deriving (Show)
-type SolidityContractsDef = IdentT SolidityContractDef
-type SolidityTypesDef = IdentT SolidityNewType
-type SolidityObjsDef = [SolidityObjDef]
-
-instance Monoid SolidityContractDef where
-  mappend (ContractDef o1 t1 i1) (ContractDef o2 t2 i2) =
-    -- o2 o1 is important : objects of the base come before objects of derived
-    ContractDef (List.unionBy ((==) `on` objName) o2 o1) (t1 `Map.union` t2) (i1 ++ i2)
-  mempty = ContractDef [] Map.empty []
-
-makeContractsDef :: [SolidityContract] -> SolidityContractsDef
-makeContractsDef contracts = Map.map finalize $ c3Linearized contractDefs
-  where
-    contractDefs = Map.fromList $ map contractToDef contracts
-    contractToDef (Contract name objs types bases) =
-      (name, ContractDef objs (makeTypesDef types) (map getContractDef bases))
-    getContractDef (name, _) = (name, contractDefs Map.! name)
-    finalize (ContractDef objsD typesD bases) = 
-      ContractDef objsD (typesD `Map.union` contractTypes') bases
-    contractTypes' = makeTypesDef $ do
-      Contract{contractName = name} <- contracts
-      return $ TypeDef name ContractT
-
-makeTypesDef :: [SolidityTypeDef] -> SolidityTypesDef
-makeTypesDef types = Map.fromList $ map typeToTuple types
-  where typeToTuple (TypeDef name decl) = (name, decl)
-
-c3Linearized :: SolidityContractsDef -> SolidityContractsDef
-c3Linearized contracts = result
-  where result = Map.map (c3Linearize result) contracts
-
-c3Linearize :: SolidityContractsDef -> SolidityContractDef -> SolidityContractDef
-c3Linearize c3Contracts contract =
-  contract{inherits = []} <> c3Merge (map c3Lookup $ inherits contract)
-  where c3Lookup (name, _) = (name, c3Contracts Map.! name)
-
-c3Merge :: [(ContractName, SolidityContractDef)] -> SolidityContractDef
-c3Merge [] = mempty
-c3Merge contracts = c3Head <> c3Merge c3Tail
-  where
-    (headName, c3Head) = contracts !! c3Index
-    c3Tail = catMaybes $ do
-      (name, contract) <- contracts
-      let cPurge = filter (\(n', _) -> headName /= n') $ inherits contract
-      if headName == name
-        then return $ do
-        (n', c') <- head' cPurge
-        return (n', c'{inherits = tail' cPurge})        
-        else return $ Just (name, contract{inherits = cPurge})
-    c3Index = fromMaybe (error "Contract inheritance cannot be linearized") $
-              List.findIndex isC3Head contracts
-    isC3Head (name, _) =
-      all (\names' -> not $ name `elem` names') $
-      map (map fst . tail' . inherits . snd) contracts
-    
-    tail' [] = []
-    tail' l = tail l
-    head' [] = Nothing
-    head' l = Just (head l)
-
+-- | File layout is the same as layout of all of its contracts, as they are
+-- independent.
 type SolidityFileLayout = SolidityContractsLayout
+-- | Convenience type for layout of multiple contracts
 type SolidityContractsLayout = IdentT SolidityContractLayout
+-- | Convenience type for layout of multiple objects.  This is only going
+-- to include variables, not functions.
 type SolidityObjsLayout = IdentT SolidityObjLayout
+-- | Convenience type for layout of multiple types.
 type SolidityTypesLayout = IdentT SolidityTypeLayout
 
+-- | The only things in a contract that get a storage representation are
+-- global variables.  Since they may have user-defined types, we need to
+-- record the storage representation of those types as well.
 data SolidityContractLayout =
   ContractLayout {
     objsLayout :: SolidityObjsLayout,
@@ -92,40 +34,71 @@ data SolidityContractLayout =
     }
   deriving (Show,Eq)
 
+-- | A variable is just a chunk of memory between two storage locations.
+-- We use bytes rather than the \"official\" notation of 32-byte storage
+-- key combined with byte offsets because it's easier to convert back than
+-- to compute with the official numbers.
 data SolidityObjLayout =
   ObjLayout {
+    -- | Position of the first byte of the byte's storage
     objStartBytes :: StorageBytes,
+    -- | Position of the last byte (/not/ off-the-end)
     objEndBytes :: StorageBytes
     }
   deriving (Show,Eq)
 
+-- | Storage layout of user-defined types
 data SolidityTypeLayout =
+  -- | Layout of a struct type
   StructLayout {
+    -- | A struct is laid out the same as a contract's global variables,
+    -- relative to the start of the structure.  Fortunately, Solidity
+    -- specifies that structs get their own block of 32-byte aligned
+    -- memory, so relocating these numbers is simply adding to the start
+    -- location, with no additional rounding.
     structFieldsLayout :: SolidityObjsLayout,
+    -- | Total number of bytes occupied by the struct.  This is a little
+    -- tricky because the individual fields may be separated by gaps due to
+    -- rounding, so it's not just the sum of their sizes.
     typeUsedBytes :: StorageBytes
     } |
+  -- | Layout of an enum type
   EnumLayout {
+    -- | Enums are represented as uintX, where X is the smallest number of
+    -- bytes (in bits) required to represent the values of the enumeration.
+    -- That is, 'X = logBase256 n', where n is the number of values.
     typeUsedBytes :: StorageBytes
     } |
+  -- | Not actually a type
   UsingLayout {
     typeUsedBytes :: StorageBytes
     } |
+  -- | Not explicitly declared by the programmer, but inserted during
+  -- computations to represent type names that don't correspond to anything
+  -- else, so are assumed to represent a contract.  In the future I'll
+  -- actually match the names to declared contracts.
   ContractTLayout {
     typeUsedBytes :: StorageBytes
     }
   deriving (Show,Eq)
 
+-- | 32-byte-aligned storage locations, divided by 32
 type StorageKey = Natural
+-- | Byte locations in storage, as-is
 type StorageBytes = Natural
 
+-- | Size of an 'address' variable is always 160 bits
 addressBytes :: StorageBytes
 addressBytes = 20
 
+-- | Alignment of storage keys is always 32 bytes
 keyBytes :: StorageBytes
 keyBytes = 32
 
+-- | Converting from the linear representation to keys
 bytesToKey :: StorageBytes -> StorageKey
 bytesToKey = (`quot` keyBytes)
 
+-- | Byte location of storage indices
 keyToBytes :: StorageKey -> StorageBytes
 keyToBytes = (* keyBytes)
