@@ -167,7 +167,9 @@ modifierDeclaration = do
 tupleDeclaration :: SolidityParser SolidityTuple
 tupleDeclaration = fmap TupleValue $ parens $ commaSep $ do
   partType <- simpleTypeExpression
-  optional $ reserved "indexed"
+  optional $ (reserved "indexed") <|>
+             (reserved "storage") <|>
+             (reserved "memory")
   partName <- option "" identifier
   return $ ObjDef {
     objName = partName,
