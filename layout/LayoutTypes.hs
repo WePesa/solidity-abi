@@ -90,14 +90,14 @@ data SolidityContractLayout =
     objsLayout :: SolidityObjsLayout,
     typesLayout :: SolidityTypesLayout
     }
-  deriving (Show)
+  deriving (Show,Eq)
 
 data SolidityObjLayout =
   ObjLayout {
     objStartBytes :: StorageBytes,
     objEndBytes :: StorageBytes
     }
-  deriving (Show)
+  deriving (Show,Eq)
 
 data SolidityTypeLayout =
   StructLayout {
@@ -113,7 +113,7 @@ data SolidityTypeLayout =
   ContractTLayout {
     typeUsedBytes :: StorageBytes
     }
-  deriving (Show)
+  deriving (Show,Eq)
 
 type StorageKey = Natural
 type StorageBytes = Natural

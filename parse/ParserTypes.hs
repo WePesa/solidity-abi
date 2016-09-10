@@ -23,7 +23,7 @@ data SolidityContract =
     contractTypes :: [SolidityTypeDef],
     contractBaseNames :: [(ContractName, SourceCode)]
     }
-  deriving (Show)
+  deriving (Show, Eq)
 
 data SolidityObjDef =
   ObjDef {
@@ -32,20 +32,20 @@ data SolidityObjDef =
     objArgType :: SolidityTuple,
     objDefn :: String
     }
-  deriving (Show)
+  deriving (Show, Eq)
            
 data SolidityTypeDef =
   TypeDef {
     typeName :: Identifier,
     typeDecl :: SolidityNewType
     }
-  deriving (Show)
+  deriving (Show, Eq)
            
 data SolidityTuple =
   NoValue |
   SingleValue SolidityBasicType |
   TupleValue [SolidityObjDef]
-  deriving (Show)
+  deriving (Show, Eq)
 
 tupleHasValue :: SolidityTuple -> Bool
 tupleHasValue NoValue = False
@@ -63,13 +63,13 @@ data SolidityBasicType =
   DynamicArray{ elemType :: SolidityBasicType } |
   Mapping     { domType  :: SolidityBasicType, codType :: SolidityBasicType } |
   Typedef     { typedefName :: Identifier }
-  deriving (Show)
+  deriving (Show, Eq)
   
 data SolidityNewType =
   Enum        { names  :: [Identifier] } |
   Struct      { fields :: [SolidityObjDef] } |
   Using       { usingContract :: ContractName, usingType :: Identifier } |
   ContractT
-  deriving (Show)
+  deriving (Show, Eq)
   
 type SolidityValue = String
