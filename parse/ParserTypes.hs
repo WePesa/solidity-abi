@@ -40,7 +40,8 @@ data SolidityObjDef =
     objName :: Identifier,
     objValueType :: SolidityTuple,
     objArgType :: SolidityTuple,
-    objDefn :: String
+    objDefn :: String,
+    objIsPublic :: Bool
     }
   deriving (Show)
            

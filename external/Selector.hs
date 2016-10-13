@@ -36,7 +36,7 @@ prettyArgTypes typesL args =
   catMaybes $ map (fmap (pretty typesL) . varType) args
 
 varType :: SolidityObjDef -> Maybe SolidityBasicType
-varType (ObjDef _ (SingleValue t) NoValue _) = Just t
+varType (ObjDef _ (SingleValue t) NoValue _ _) = Just t
 varType _ = Nothing
 
 pretty :: SolidityTypesLayout -> SolidityBasicType -> Doc
