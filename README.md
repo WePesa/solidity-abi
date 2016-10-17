@@ -80,6 +80,8 @@ variable = {
   basic type ABI
 }
 basic type ABI = {
+  // If this is a public variables
+  "public" : true,
   // intN
   "type" : "Int",
   "signed" : true,
