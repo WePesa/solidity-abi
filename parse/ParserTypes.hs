@@ -41,7 +41,7 @@ data SolidityObjDef =
     objValueType :: SolidityTuple,
     objArgType :: SolidityTuple,
     objDefn :: String,
-    objIsPublic :: Bool
+    objIsPublic :: Bool -- These variables have accessor functions
     }
   deriving (Show)
            

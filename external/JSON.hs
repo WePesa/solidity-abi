@@ -154,6 +154,7 @@ typeABI _ _ _ = Nothing
 
 objABI :: SolidityObjDef -> Maybe (String, [Pair])
 objABI (ObjDef name (SingleValue t) NoValue _ isPublic) =
+  -- In addition to the type, also record whether the variable is public
   Just (name, basicTypeABI t ++ if isPublic then [pair "public" True] else [])
 objABI _ = Nothing
 

@@ -95,6 +95,8 @@ variableDeclaration = do
 simpleVariableDeclaration :: SolidityParser SolidityObjDef
 simpleVariableDeclaration = do
   variableType <- simpleTypeExpression
+  -- We have to remember which variables are "public", because they
+  -- generate accessor functions
   (variableVisible, variableIsPublic) <- option (True, False) $
                      (reserved "constant" >> return (False, False)) <|>
                      (reserved "storage" >> return (True, False)) <|>
