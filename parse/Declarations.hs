@@ -95,7 +95,7 @@ variableDeclaration = do
 simpleVariableDeclaration :: SolidityParser SolidityObjDef
 simpleVariableDeclaration = do
   variableType <- simpleTypeExpression
-  (variableVisible, variableIsPublic) <- option (True, True) $
+  (variableVisible, variableIsPublic) <- option (True, False) $
                      (reserved "constant" >> return (False, False)) <|>
                      (reserved "storage" >> return (True, False)) <|>
                      (reserved "memory" >> return (False, False)) <|>
