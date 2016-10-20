@@ -9,7 +9,7 @@ This version is compatible with solc-0.2.0.
 
 ```sh
 # Command-line
-solidity-abi (main-file.sol import1.sol ... | --stdin)
+solidity-abi (main-file.sol | --stdin) import1.sol ... 
 ```
 ```haskell
 -- Haskell
@@ -17,10 +17,48 @@ import Blockchain.Ethereum.Solidity.Layout
 import Blockchain.Ethereum.Solidity.Parse            
 import Blockchain.Ethereum.Solidity.External.JSON    
 import Blockchain.Ethereum.Solidity.External.Contract
+
+import Data.Map (Map)
+import qualified Data.Map as Map
+
+sourceFiles :: Map FileName SourceCode
+
+parsedFiles :: Either ParseError (Map FileName SolidityFile)
+parsedFiles = sequence $ Map.mapWithKey parseSolidity sourceFiles
+
+-- `Left error` reports errors that we catch explicitly
+-- `Right value` is the successful result
+mainJSON :: FileName -> Either Value Value
+mainJSON mainFileName = jsonABI mainFileName =<< parsedFiles'
+  where parsedFiles' = either (Left . toJSON . show) id parsedFiles
 ```
 
-## Unsuccessful output
-Most errors in parsing will emit en error message and quit immediately.  If the error is a missing import, the result is instead the successful output of a JSON object:
+## Handling of imports
+The emitted JSON contains information for the provided _main_ file, with all
+imported contracts included.  The imported files are not emitted separately.
+The following import syntaxes are accepted:
+
+- (Basic) `import "filename";`
+- (Qualified basic) `import "filename" as Qualifier;`
+- (Star ES6) `import * from "filename";`
+- (Selective and aliasing ES6) `import {C, D as E} from "filename";`
+
+All but the last one import every contract from `filename`; in the case of the
+second, each one is qualified as `C -> Qualifier.C`.  In the last case, only the
+given contract names are imported, and possibly renamed as shown; with the
+statement shown, the imported names are `C` and `E`, where `E` represents the
+contract declared as `D`.
+
+*Difference with solc* At least through version 0.3.6, the solc compiler does
+_not_ rename imported contracts when emitting binaries.  That is, in the second
+case above, a contract `C` in `filename` is reported as `C` alongside its
+binary.  This appears to be an error and we do not imitate it.
+
+Import filenames are resolved by consulting the list of command-line arguments
+(for the CLI tool) or map keys (for the library).  In order to maintain the
+functional purity of the library, we do not (currently) support import file
+discovery at runtime.  If an import is missing, then the result will be an error
+JSON object of the form
 ```js
 missingImport = {
   "missingImport": <file path>
@@ -48,6 +86,7 @@ produce JSON of the following form
 ### Contract level
 ```js
 contract = {
+   "realName" : string (name contract was defined with),
    "vars" : {
      "var name" : variable (visible externally)
      ...
