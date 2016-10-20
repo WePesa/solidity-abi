@@ -22,6 +22,10 @@ type IdentT a = Map Identifier a
 -- removed.  It represents the state of a contract post-inheritance.
 data SolidityContractDef =
   ContractDef {
+    -- | This field exists only to placate solc, which for some reason
+    -- emits contracts under their declared names even when they are
+    -- imported qualified.
+    realName :: ContractName,
     objsDef :: SolidityObjsDef,
     typesDef :: SolidityTypesDef,
     inherits :: [(ContractName, SolidityContractDef)]
@@ -36,10 +40,10 @@ type SolidityObjsDef = [SolidityObjDef]
 -- | This instance handles combining a derived and base contract with
 -- variables in the correct order.
 instance Monoid SolidityContractDef where
-  mappend (ContractDef o1 t1 i1) (ContractDef o2 t2 i2) =
+  mappend (ContractDef rn1 o1 t1 i1) (ContractDef rn2 o2 t2 i2) =
     -- o2 o1 is important : objects of the base come before objects of derived
-    ContractDef (List.unionBy ((==) `on` objName) o2 o1) (t1 `Map.union` t2) (i1 ++ i2)
-  mempty = ContractDef [] Map.empty []
+    ContractDef rn1 (List.unionBy ((==) `on` objName) o2 o1) (t1 `Map.union` t2) (i1 ++ i2)
+  mempty = ContractDef "" [] Map.empty []
 
 -- | Resolves inheritance among contracts in a set of source files with
 -- import requests.  This can be tricky and I am not sure we do it right.
@@ -63,14 +67,14 @@ makeContractsDef fileDefEs fileName (SolidityFile contracts imports) = do
   let
     getContractDef (name, _) = (name, Map.findWithDefault (error $ "Couldn't find base contract named " ++ name) name allDefs)
     contractToDef (Contract name objs types bases) =
-      (name, ContractDef objs (makeTypesDef types) (map getContractDef bases))
+      (name, ContractDef name objs (makeTypesDef types) (map getContractDef bases))
     contractDefs = Map.fromList $ map contractToDef contracts
     allDefs = importDefs `Map.union` contractDefs
 
     contractTypes' =
       makeTypesDef $ map (\(name, _) -> TypeDef name ContractT) $ Map.toList allDefs
-    finalize (ContractDef objsD typesD bases) = 
-      ContractDef objsD (typesD `Map.union` contractTypes') bases
+    finalize (ContractDef realName objsD typesD bases) = 
+      ContractDef realName objsD (typesD `Map.union` contractTypes') bases
   
     result = Map.map finalize $ c3Linearized contractDefs importDefs
   return (result, result `Map.union` importDefs)

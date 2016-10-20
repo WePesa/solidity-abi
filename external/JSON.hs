@@ -66,8 +66,9 @@ filesABI fileName fileABIEs imports fileDef = do
   return $ fileABI `Map.union` importsABI
 
 contractABI :: SolidityFileLayout -> ContractName -> SolidityContractDef -> Value
-contractABI fL name (ContractDef objs types _) =
+contractABI fL name (ContractDef realName objs types _) =
   object $
+      [pair "realName" realName] ++
       nonempty (pair "vars") (varsABI (objsLayout $ getObj name fL) objs) ++
       nonempty (pair "funcs") (funcsABI typesL objs) ++
       nonempty (pair "types") (typesABI typesL types) ++

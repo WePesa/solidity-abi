@@ -37,7 +37,7 @@ makeContractsLayout contracts = contractsL
 
 makeContractLayout :: SolidityContractsLayout -> SolidityContractDef
                       -> SolidityContractLayout
-makeContractLayout contractsL (ContractDef objs types _) =
+makeContractLayout contractsL (ContractDef _ objs types _) =
   ContractLayout {
     objsLayout = makeObjsLayout typesL objs,
     typesLayout = typesL
