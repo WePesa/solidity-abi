@@ -1,4 +1,3 @@
--- |
 -- Module: DefnTypes
 -- Description: Types to describe a contract after inheritance is resolved
 --   and the structure is fully known.

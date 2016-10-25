@@ -110,13 +110,15 @@ variableDeclaration = do
 simpleVariableDeclaration :: SolidityParser SolidityObjDef
 simpleVariableDeclaration = do
   variableType <- simpleTypeExpression
-  variableVisible <- option True $
-                     (reserved "constant" >> return False) <|>
-                     (reserved "storage" >> return True) <|>
-                     (reserved "memory" >> return False) <|>
-                     (reserved "public" >> return True) <|>
-                     (reserved "private" >> return False) <|>
-                     (reserved "internal" >> return False)
+  -- We have to remember which variables are "public", because they
+  -- generate accessor functions
+  (variableVisible, variableIsPublic) <- option (True, False) $
+                     (reserved "constant" >> return (False, False)) <|>
+                     (reserved "storage" >> return (True, False)) <|>
+                     (reserved "memory" >> return (False, False)) <|>
+                     (reserved "public" >> return (True, True)) <|>
+                     (reserved "private" >> return (False, False)) <|>
+                     (reserved "internal" >> return (False, False))
   variableName <- identifier
   let objValueType' =
         if variableVisible
@@ -126,7 +128,8 @@ simpleVariableDeclaration = do
     objName = variableName,
     objValueType = objValueType',
     objArgType = NoValue,
-    objDefn = ""
+    objDefn = "",
+    objIsPublic = variableIsPublic
     }
 
 {- Functions and function-like -}
@@ -148,7 +151,8 @@ functionDeclaration = do
     objName = functionName,
     objValueType = objValueType',
     objArgType = functionArgs,
-    objDefn = functionBody
+    objDefn = functionBody,
+    objIsPublic = False -- We only care about public variables
     }
 
 -- | Parses an event definition.  At the moment we don't do anything with
@@ -165,7 +169,8 @@ eventDeclaration = do
     objName = name,
     objValueType = NoValue,
     objArgType = logs,
-    objDefn = ""
+    objDefn = "",
+    objIsPublic = False -- We only care about public variables
     }
 
 -- | Parses a function modifier definition.  At the moment we don't do
@@ -181,7 +186,8 @@ modifierDeclaration = do
     objName = name,
     objValueType = NoValue,
     objArgType = args,
-    objDefn = defn
+    objDefn = defn,
+    objIsPublic = False -- We only care about public variables
     }
 
 {- Not really declarations -}
@@ -199,7 +205,8 @@ tupleDeclaration = fmap TupleValue $ parens $ commaSep $ do
     objName = partName,
     objValueType = SingleValue partType,
     objArgType = NoValue,
-    objDefn = ""
+    objDefn = "",
+    objIsPublic = False -- We only care about public variables
     }
 
 -- | Parses all the things that can modify a function declaration,

@@ -89,7 +89,8 @@ data SolidityObjDef =
     objArgType :: SolidityTuple,
     -- | The code for a variable's initialization or a function's body.
     -- Ignored.
-    objDefn :: String
+    objDefn :: String,
+    objIsPublic :: Bool -- These variables have accessor functions
     }
   deriving (Show, Eq)
            

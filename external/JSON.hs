@@ -37,8 +37,8 @@ jsonABI fileName files = convertImportError $ do
   let
     files' = Map.mapKeys collapse files
     results = Map.mapWithKey (doFileABI files') filesDef
-    doFileABI filesM fName =
-      filesABI fName results (fileImports $ getFile fName filesM) 
+    doFileABI filesM fName fileDef =
+      filesABI fName results (fileImports $ getFile fName filesM) fileDef
       where getFile name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in files'") name
     getResult name = Map.findWithDefault (error $ "file name " ++ show name ++ " not found in results") name
   result <- getResult fileName results
@@ -108,10 +108,10 @@ constrABI :: Identifier -> [SolidityObjDef] -> Value
 constrABI name objs = object $ maybe [] listABI argsM
   where
     argsM = getArgs =<< List.find isConstr objs
-    isConstr (ObjDef name' (SingleValue (Typedef name'')) (TupleValue _) _)
+    isConstr (ObjDef name' (SingleValue (Typedef name'')) (TupleValue _) _ _)
       | name == name' && name == name'' = True
     isConstr _ = False
-    getArgs (ObjDef _ _ (TupleValue args) _) = Just args
+    getArgs (ObjDef _ _ (TupleValue args) _ _) = Just args
     getArgs _ = Nothing
 
 listABI :: [SolidityObjDef] -> [Pair]
@@ -128,7 +128,7 @@ varABI layout' obj = do
   return $ pair name $ object $ pair "atBytes" (toInteger oB) : tABI
 
 funcABI :: SolidityTypesLayout -> SolidityObjDef -> Maybe Pair
-funcABI typesL (ObjDef name (TupleValue vals) (TupleValue args) _) =
+funcABI typesL (ObjDef name (TupleValue vals) (TupleValue args) _ _) =
   Just $ pair name $ object [
            pair "selector" $ selector typesL name args vals,
            lpair "args" args,
@@ -158,8 +158,9 @@ typeABI (UsingLayout _) name (Using contract typeName') =
 typeABI _ _ _ = Nothing
 
 objABI :: SolidityObjDef -> Maybe (String, [Pair])
-objABI (ObjDef name (SingleValue t) NoValue _) =
-  Just (name, basicTypeABI t)
+objABI (ObjDef name (SingleValue t) NoValue _ isPublic) =
+  -- In addition to the type, also record whether the variable is public
+  Just (name, basicTypeABI t ++ if isPublic then [pair "public" True] else [])
 objABI _ = Nothing
 
 basicTypeABI :: SolidityBasicType -> [Pair]

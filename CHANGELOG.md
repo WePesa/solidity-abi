@@ -1,4 +1,8 @@
 API changes:
+  Have all state variables remember whether they were declared (explicitly or
+  implicitly) to be `public`, and have the ABI contain this information.
+---
+API changes:
   Change Blockchain.Ethereum.Solidity.Layout function `layout` to `makeContractLayout`
   Signature changed from 
   ```SolidityFile -> SolidityFileLayout```
