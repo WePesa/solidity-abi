@@ -141,7 +141,8 @@ structOfBasic =
         objName = "f" ++ show n,
         objValueType = SingleValue t,
         objArgType = NoValue,
-        objDefn = ""
+        objDefn = "",
+        objIsPublic = False
       }
 
 structOfComposite :: ParserTestInput
@@ -168,7 +169,8 @@ structOfComposite =
         objName = "f" ++ show n,
         objValueType = SingleValue t,
         objArgType = NoValue,
-        objDefn = ""
+        objDefn = "",
+        objIsPublic = False
       }
 
 compositeBasicTypeTestInput :: String -> String -> SolidityBasicType -> ParserTestInput
