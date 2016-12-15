@@ -5,20 +5,22 @@
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module Types where
 
+import Data.List
 import Data.Maybe
 import Text.Parsec
 
 import Expression
 import Lexer
-import ParserTypes
+import SolidityParser
+import SolidityTypes
 
 -- | A type expression is either a composite type (arrays and mappings) or
 -- a simple type (builtins and user-defined names)
-simpleTypeExpression :: SolidityParser SolidityBasicType
+simpleTypeExpression :: SolidityParser BasicType
 simpleTypeExpression = try arrayType <|> simpleType <|> mappingType
 
 -- | Parses builtins and user-defined names
-simpleType :: SolidityParser SolidityBasicType
+simpleType :: SolidityParser BasicType
 simpleType =
   simple "bool" Boolean <|>
   simple "address" Address <|>
@@ -26,11 +28,14 @@ simpleType =
   bytes' <|>
   intSuffixed "uint" UnsignedInt <|>
   intSuffixed "int"  SignedInt   <|>
-  Typedef <$>
-    choice [
-      identifier,
-      concat <$> sequence [identifier, dot, identifier]
-    ]
+  LinkT <$> do
+    parts <- sepBy1 identifier dot
+    newLink <- case parts of
+      [x] -> return $ UnqualifiedLink x
+      [x, y] -> return $ QualifiedLink x y
+      [x, y, z] -> return $ QualifiedLink (x ++ "." ++ y) z
+      _ -> fail "Too many qualifiers in type name"
+    newLinkage newLink
   where
     simple name nameType = do
       reserved name
@@ -55,7 +60,7 @@ simpleType =
 -- array length so long as they only reference explicit numbers.  Note that
 -- for nested arrays, we have 'T[n][m] = (T[n])[m]' rather than '(T[m])[n]'
 -- as in C.
-arrayType :: SolidityParser SolidityBasicType
+arrayType :: SolidityParser BasicType
 arrayType = do
   baseElemType <- simpleType <|> mappingType
   sizeList <- many1 $ brackets $ optionMaybe intExpr
@@ -65,7 +70,7 @@ arrayType = do
 
 -- | Parses mapping types, ignoring possible restrictions on what the
 -- domain and codomain can be.
-mappingType :: SolidityParser SolidityBasicType
+mappingType :: SolidityParser BasicType
 mappingType = do
   reserved "mapping"
   (mapDomT, mapCodT) <- parens $ do

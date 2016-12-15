@@ -18,9 +18,7 @@ import Text.PrettyPrint
 import qualified Crypto.Hash.SHA3 as SHA3 (hash)
 import Numeric
 
-import ParserTypes
-import LayoutTypes
-
+import SolidityTypes
 -- | The 'selector' function is responsible for producing the 4-byte
 -- hash that Solidity uses to identify functions.  It's essentially the
 -- first 4 bytes of the Keccak hash of the signature with all the argument
@@ -29,41 +27,50 @@ import LayoutTypes
 -- respectively 'uintX' and 'address' types, where X is the least number of
 -- bytes (in bits) that can hold all the enum's values.  Structs are not
 -- permitted at all.
-selector :: SolidityTypesLayout -> Identifier -> [SolidityObjDef] -> [SolidityObjDef] -> String
-selector typesL name args vals = hash4 $ signature typesL name args vals
+selector :: LinkageT 'AfterLayout -> Identifier -> Tuple -> String
+selector linkage name args = hash4 $ runReader (signature name args) linkage
   where
     hash4 bs = concatMap toHex $ BS.unpack $ BS.take 4 $ SHA3.hash 256 bs
     toHex = zeroPad . flip showHex ""
     zeroPad [c] = ['0',c]
     zeroPad x = x
 
-signature :: SolidityTypesLayout -> Identifier -> [SolidityObjDef] -> [SolidityObjDef] -> ByteString
-signature typesL name args _ = encodeUtf8 $ T.pack $ name ++ prettyArgTypes typesL args
+type SelectorReader = Reader (LinkageT 'AfterLayout)
 
-prettyArgTypes :: SolidityTypesLayout -> [SolidityObjDef] -> String
-prettyArgTypes typesL args =
-  show $ parens $ hcat $ punctuate (text ",") $
-  mapMaybe (fmap (pretty typesL) . varType) args
+signature :: Identifier -> Tuple -> SelectorReader ByteString
+signature name args = do
+  argsSig <- sigArgTypes args
+  return $ encodeUtf8 $ T.pack $ name ++ argsSig
 
-varType :: SolidityObjDef -> Maybe SolidityBasicType
-varType (ObjDef _ (SingleValue t) NoValue _) = Just t
-varType _ = Nothing
+sigArgTypes :: Tuple -> SelectorReader String
+sigArgTypes (TupleValue args) =
+  show . parens . hcat . punctuate (text ",") <$>
+  mapM (sig . argType) args
 
-pretty :: SolidityTypesLayout -> SolidityBasicType -> Doc
-pretty _ Boolean = text "bool"
-pretty _ Address = text "address"
-pretty _ (SignedInt s) = text "int" <> natural (s * 8)
-pretty _ (UnsignedInt s) = text "uint" <> natural (s * 8)
-pretty _ (FixedBytes s) = text "bytes" <> natural s
-pretty _ DynamicBytes = text "bytes"
-pretty _ String = text "string"
-pretty typesL (FixedArray t l) = pretty typesL t <> text "[" <> natural l <> text "]"
-pretty typesL (DynamicArray t) = pretty typesL t <> text "[]"
-pretty typesL (Mapping d c) =
-  text "mapping" <+> parens (pretty typesL d <+> text "=>" <+> pretty typesL c)
-pretty typesL (Typedef name) = 
-  case typesL Map.! name of
-    EnumLayout s -> pretty typesL (UnsignedInt s)
-    _ -> text name
+sig :: BasicType -> SelectorReader Doc
+sig Boolean = return $ text "bool"
+sig Address = return $ text "address"
+sig (SignedInt s) = return $ text "int" <> natural (s * 8)
+sig (UnsignedInt s) = return $ text "uint" <> natural (s * 8)
+sig (FixedBytes s) = return $ text "bytes" <> natural s
+sig DynamicBytes = return $ text "bytes"
+sig String = return $ text "string"
+sig (FixedArray t l) = do
+  tSig <- sig t
+  return $ tSig <> text "[" <> natural l <> text "]"
+sig (DynamicArray t) = do
+  tSig <- sig t
+  return $ tSig <> text "[]"
+sig (Mapping d c) = do
+  dSig <- sig d
+  cSig <- sig c
+  return $ text "mapping" <+> (parens $ dSig <+> text "=>" <+> cSig)
+sig (LinkT linkID) = do
+  linkage <- ask
+  case linkage Map.! linkID of
+    ContractLink _ -> sig Address
+    InheritedLink WithSize{sizeOf} -> sig $ UnsignedInt sizeOf
+    PlainLink WithSize{sizeOf} -> sig $ UnsignedInt sizeOf
+    LibraryLink WithSize{sizeOf} -> sig $ UnsignedInt sizeOf
 
 natural = integer . toInteger

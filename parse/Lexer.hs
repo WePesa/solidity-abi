@@ -9,7 +9,7 @@ import Text.Parsec
 import Text.Parsec.Language (javaStyle)
 import qualified Text.Parsec.Token as P
 
-import ParserTypes
+import SolidityParser
 
 -- | A common pattern: code enclosed in braces, allowing nested braces.
 bracedCode :: SolidityParser String

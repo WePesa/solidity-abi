@@ -22,27 +22,32 @@ executable solidity-abi
                        containers,
                        aeson-pretty,
                        solidity-abi
-  hs-source-dirs:      bin
+  hs-source-dirs:      exec
+                       .
   default-language:    Haskell2010
 
 library
-  exposed-modules:     Blockchain.Ethereum.Solidity.Layout
-                       Blockchain.Ethereum.Solidity.Parse
-                       Blockchain.Ethereum.Solidity.External.JSON
-                       Blockchain.Ethereum.Solidity.External.Contract
+  exposed-modules:     Blockchain.Ethereum.Solidity
   other-modules:       JSON
                        Selector
                        Layout
-                       LayoutTypes
                        Declarations
                        Expression
+                       LayoutTypes
                        File
                        Lexer
                        Parser
-                       DefnTypes
-                       ParserTypes
+                       SolidityTypes
+                       SolidityParser
                        Types
-                       Imports
+                       DAG
+                       Linkage
+                       BaseContracts
+                       FilePaths
+                       Qualify
+                       Inheritance
+                       Structure
+                       C3
   build-depends:       base,
                        containers,
                        parsec,
@@ -51,14 +56,20 @@ library
                        filepath,
                        pretty,
                        aeson,
+                       semigroups,
                        cryptohash,
                        unordered-containers,
                        vector,
                        hscolour
+                       transformers
   hs-source-dirs:      .
+                       algo
                        external
+                       inheritance
                        layout
+                       linkage
                        parse
+  default-extensions:  DataKinds, NamedFieldPuns
   default-language:    Haskell2010
 
 Test-Suite test-solidity-abi

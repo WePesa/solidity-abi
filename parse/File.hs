@@ -10,25 +10,33 @@
 module File (solidityFile) where
 
 import Data.Either
+import qualified Data.Map as Map
 
 import Text.Parsec
+import Text.Parsec.Char
+import Text.Parsec.Pos
 
 import Prelude hiding (lookup)
 
 import Declarations
 import Lexer
-import ParserTypes
+import SolidityParser
+import SolidityTypes
 
 -- | Parses a full Solidity file's contracts and imports
-solidityFile :: SolidityParser SolidityFile
-solidityFile = do
+solidityFile :: FileName -> SolidityParser SolidityFile
+solidityFile fileName = do
   whiteSpace
   toplevel <- many $ do
     let eitherImport = Right <$> solidityImport
-        eitherContract = Left <$> solidityContract
+        eitherContract = Left <$> (solidityContract fileName >> getState)
     eitherImport <|> eitherContract
   eof
-  return $ uncurry SolidityFile $ partitionEithers toplevel
+  let (contractsAssoc, imports) = partitionEithers toplevel
+  return SolidityFile {
+    fileContracts = Map.mapKeys contractName $ Map.fromList contractsAssoc,
+    fileImports = imports
+    }
  
 -- | Parses any of the various kinds of import statements
 solidityImport :: SolidityParser (FileName, ImportAs)
@@ -65,8 +73,7 @@ es6ImportAs =
       ("*", p) -> return $ StarPrefix p
       _ -> parserFail "ES6-style import without braces must import \"*\""
   ) <|>
-  braces 
-  (do
+  (braces $ do
     importsAs <- commaSep1 es6As
     return $ Aliases importsAs
   )
@@ -74,7 +81,7 @@ es6ImportAs =
 -- | Parses the actual 'sym1 [as alias]' part of the es6 import
 es6As :: SolidityParser (ContractName, ContractName)
 es6As = do
-  origName <- identifier <|> lexeme (string "*")
+  origName <- identifier <|> (lexeme $ string "*")
   newName <- option origName $ do
     lexeme $ string "as"
     identifier

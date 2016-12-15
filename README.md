@@ -66,6 +66,15 @@ missingImport = {
 ```
 containing the first missing import encountered.
 
+## Unsuccessful output
+Most errors in parsing will emit en error message and quit immediately.  If the error is a missing import, the result is instead the successful output of a JSON object:
+```js
+missingImport = {
+  "missingImport": <file path>
+}
+```
+containing the first missing import encountered.
+
 ## Successful output
 Upon successful parsing, `solidity-abi` returns a JSON object object (the
 "ABI") with the following structure:
@@ -99,7 +108,16 @@ contract = {
      "type name" : type defn,
      ...
    },
-   "constr" : function args
+   "libraryTypes" : {
+      "library name" : {
+        "type name" : type defn,
+        ...
+      },
+      ...
+   },
+   "constr" : function args,
+   // For libraries only
+   "library" : true
 }
 ```
 where any of the fields, if empty, is omitted.
@@ -150,6 +168,7 @@ basic type ABI = {
   "value" : basic type ABI of valT
   // name
   "typedef" : name (identifier of user-defined type)
+  "library" : name (name of library containing the type; absent if not from a library)
 }
 ```
 

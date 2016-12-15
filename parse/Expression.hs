@@ -12,7 +12,8 @@ import Text.Parsec.Expr
 import Data.Functor.Identity
 
 import Lexer
-import ParserTypes
+import SolidityParser
+import SolidityTypes
 
 -- | Parses an arithmetic expression involving integer values and
 -- operations

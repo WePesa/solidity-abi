@@ -1,9 +1,7 @@
-import Blockchain.Ethereum.Solidity.Parse
-import Blockchain.Ethereum.Solidity.External.JSON
+import Blockchain.Ethereum.Solidity
 
 import qualified Data.Aeson.Encode.Pretty as Aeson
 import qualified Data.ByteString.Lazy as BS
-import qualified Data.ByteString.Lazy.Char8 as BSC
 
 import Data.List
 import Data.Maybe
@@ -22,6 +20,5 @@ main = do
       f -> readFile f
     importMap <- sequence $ Map.fromList $ zip imports $ map readFile imports
     return (mainFile, Map.insert mainFile mainSrc importMap)
-  either putStrLn (BS.putStr . Aeson.encodePretty) $ do
-    parsed <- either (Left . show) Right $ sequence $ Map.mapWithKey parseSolidity sourceMap
-    either (Left . BSC.unpack . Aeson.encodePretty) Right $ jsonABI mainFile parsed
+  BS.putStr $ Aeson.encodePretty $ parseToStructure sourceMap Map.! mainFile 
+

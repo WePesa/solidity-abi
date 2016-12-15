@@ -5,6 +5,8 @@
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module Declarations (solidityContract) where
 
+import Control.Monad
+
 import Data.Either
 import Data.List
 import Data.Maybe
@@ -13,220 +15,217 @@ import Text.Parsec
 import Text.Parsec.Perm
 
 import Lexer
-import ParserTypes
+import SolidityParser
+import SolidityTypes
 import Types
 
 -- | Parses an entire Solidity contract
-solidityContract :: SolidityParser SolidityContract
-solidityContract = do
-  reserved "contract" <|> reserved "library"
-  contractName' <- identifier
-  setContractName contractName'
-  baseConstrs <- option [] $ do
+solidityContract :: FileName -> SolidityParser ()
+solidityContract fileName = do
+  isLibrary <- (reserved "contract" >> return False) <|> (reserved "library" >> return True)
+  name <- identifier
+  initContract fileName name isLibrary
+  optional $ do
     reserved "is"
     commaSep1 $ do
       name <- intercalate "." <$> sepBy1 identifier dot
-      consArgs <- option "" parensCode
-      return (name, consArgs)
-  (contractTypes', contractObjs') <-
-    partitionEithers <$> braces (many solidityDeclaration)
-  return Contract{
-    contractName = contractName',
-    contractObjs = filter (tupleHasValue . objValueType) contractObjs',
-    contractTypes = contractTypes',
-    contractBaseNames = baseConstrs
-    }
+      _ <- option "" parensCode
+      addBase name -- Executed left-to-right, but reversed by prepending
+    return ()
+  braces $ skipMany solidityDeclaration
+  isAbstract <- getIsAbstract
+
+  if isAbstract && isLibrary
+  then parserFail $ "Library " ++ name ++ " may not be an abstract contract"
+  else return ()
 
 -- | Parses anything that a contract can declare at the top level: new types,
 -- variables, functions primarily, also events and function modifiers.
-solidityDeclaration :: SolidityParser (Either SolidityTypeDef SolidityObjDef)
+solidityDeclaration :: SolidityParser ()
 solidityDeclaration =
-  fmap Left structDeclaration <|>
-  fmap Left enumDeclaration <|>
-  fmap Left usingDeclaration <|>
-  fmap Right functionDeclaration <|>
-  fmap Right modifierDeclaration <|>
-  fmap Right eventDeclaration <|>
-  fmap Right variableDeclaration
+  structDeclaration <|>
+  enumDeclaration <|>
+  usingDeclaration <|>
+  functionDeclaration <|>
+  modifierDeclaration <|>
+  eventDeclaration <|>
+  variableDeclaration
 
 {- New types -}
 
 -- | Parses a struct definition
-structDeclaration :: SolidityParser SolidityTypeDef
+structDeclaration :: SolidityParser ()
 structDeclaration = do
   reserved "struct"
   structName <- identifier
   structFields <- braces $ many1 $ do
-    decl <- simpleVariableDeclaration
+    decl <- simpleVariableDeclaration [TypeStorage]
     semi
-    return decl
-  return TypeDef{
-    typeName = structName,
-    typeDecl = Struct { fields = structFields }
-    }
+    return $ toFieldDef decl
+  -- Reverse is necessary because the layout has to follow the convention
+  -- of storage variables
+  addType structName Struct{ fields = reverse structFields }
 
 -- | Parses an enum definition
-enumDeclaration :: SolidityParser SolidityTypeDef
+enumDeclaration :: SolidityParser ()
 enumDeclaration = do
   reserved "enum"
   enumName <- identifier
   enumFields <- braces $ commaSep1 identifier
-  return TypeDef {
-    typeName = enumName,
-    typeDecl = Enum { names = enumFields}
-    }
+  addType enumName Enum{ names = enumFields }
 
--- | Erroneous; will be removed
-usingDeclaration :: SolidityParser SolidityTypeDef
+-- | This one has no type-level effect, so we don't have to do anything
+usingDeclaration :: SolidityParser ()
 usingDeclaration = do
   reserved "using"
-  usingContract' <- identifier
+  identifier
   reserved "for"
-  string usingContract'
-  dot
-  usingName <- identifier
+  optional $ try (identifier >> dot)
+  identifier
   semi
-  return TypeDef{
-    typeName = usingContract' ++ "." ++ usingName,
-    typeDecl = Using { usingContract = usingContract', usingType = usingName }
-    }
+  return ()
 
 {- Variables -}
 
 -- | Parses a variable definition
-variableDeclaration :: SolidityParser SolidityObjDef
+variableDeclaration :: SolidityParser ()
 variableDeclaration = do
-  vDecl <- simpleVariableDeclaration
-  vDefn <- optionMaybe $ do
+  (vName, vDecl) <- simpleVariableDeclaration [StorageStorage, MemoryStorage, ValueStorage]
+  optional $ do
     reservedOp "="
     many $ noneOf ";"
   semi
-  return $ maybe vDecl (\vD -> vDecl{objDefn = vD}) vDefn
+  when (null vName) $ fail "State variable name may not be empty"
+  addVar vName vDecl
 
 -- | Parses the declaration part of a variable definition, which is
 -- everything except possibly the initializer and semicolon.  Necessary
 -- because these kinds of expressions also appear in struct definitions and
 -- function arguments.
-simpleVariableDeclaration :: SolidityParser SolidityObjDef
-simpleVariableDeclaration = do
+simpleVariableDeclaration :: [Storage] -> SolidityParser (Identifier, VarDef)
+simpleVariableDeclaration allowedStorage = do
   variableType <- simpleTypeExpression
-  variableVisible <- option True $
-                     (reserved "constant" >> return False) <|>
-                     (reserved "storage" >> return True) <|>
-                     (reserved "memory" >> return False) <|>
-                     (reserved "public" >> return True) <|>
-                     (reserved "private" >> return False) <|>
-                     (reserved "internal" >> return False)
-  variableName <- identifier
-  let objValueType' =
-        if variableVisible
-        then SingleValue variableType
-        else NoValue
-  return ObjDef{
-    objName = variableName,
-    objValueType = objValueType',
-    objArgType = NoValue,
-    objDefn = ""
-    }
+  typeMaker <- variableModifiers $ head allowedStorage
+  variableName <- option "" identifier
+  let result = (variableName, typeMaker variableType)
+      stor = varStorage $ snd result
+  unless (stor `elem` allowedStorage) $
+    fail $ "Argument or variable named '" ++ variableName ++ 
+           "' may not have storage " ++ show stor
+  return result
 
 {- Functions and function-like -}
 
 -- | Parses a function definition.
-functionDeclaration :: SolidityParser SolidityObjDef
+functionDeclaration :: SolidityParser ()
 functionDeclaration = do
   reserved "function"
-  functionName <- fromMaybe "" <$> optionMaybe identifier
-  functionArgs <- tupleDeclaration
-  (functionRet, functionVisible, _, _) <- functionModifiers
+  name <- option "" identifier
+  args <- tupleDeclaration [MemoryStorage, StorageStorage]
+  objMaker <- functionModifiers
   functionBody <- bracedCode <|> (semi >> return "")
-  contractName' <- getContractName
-  let objValueType' = case () of
-        _ | null functionName || not functionVisible -> NoValue
-        _ | functionName == contractName' -> SingleValue $ Typedef contractName'
-        _ -> functionRet
-  return ObjDef{
-    objName = functionName,
-    objValueType = objValueType',
-    objArgType = functionArgs,
-    objDefn = functionBody
-    }
+  addFunc name $ objMaker args functionBody
 
 -- | Parses an event definition.  At the moment we don't do anything with
 -- it, but this prevents the parser from rejecting contracts that use
 -- events.
-eventDeclaration :: SolidityParser SolidityObjDef
+eventDeclaration :: SolidityParser ()
 eventDeclaration = do
   reserved "event"
   name <- identifier
-  logs <- tupleDeclaration
-  optional $ reserved "anonymous"
+  logs@(TupleValue logsL) <- tupleDeclaration [StorageStorage, IndexedStorage]
+  when (length logsL > 4) $ fail $ "Event " ++ name ++ " has more than 4 topics"
+  isAnon <- option False $ reserved "anonymous" >> return True
   semi
-  return ObjDef{
-    objName = name,
-    objValueType = NoValue,
-    objArgType = logs,
-    objDefn = ""
+  addEvent name $ EventDef {
+    eventTopics = logs,
+    eventIsAnonymous = isAnon
     }
 
 -- | Parses a function modifier definition.  At the moment we don't do
 -- anything with it, but this prevents the parser from rejecting contracts
 -- that use modifiers.
-modifierDeclaration :: SolidityParser SolidityObjDef
+modifierDeclaration :: SolidityParser ()
 modifierDeclaration = do
   reserved "modifier"
   name <- identifier
-  args <- option NoValue tupleDeclaration
+  args <- option (TupleValue []) $ tupleDeclaration [MemoryStorage]
   defn <- bracedCode
-  return ObjDef{
-    objName = name,
-    objValueType = NoValue,
-    objArgType = args,
-    objDefn = defn
+  addModifier name $ ModifierDef {
+    modArgs = args,
+    modDefn = defn
     }
 
 {- Not really declarations -}
 
 -- | Parses a '(x, y, z)'-style tuple, such as appears in function
--- arguments and return values.
-tupleDeclaration :: SolidityParser SolidityTuple
-tupleDeclaration = fmap TupleValue $ parens $ commaSep $ do
-  partType <- simpleTypeExpression
-  optional $ reserved "indexed" <|>
-             reserved "storage" <|>
-             reserved "memory"
-  partName <- option "" identifier
-  return ObjDef{
-    objName = partName,
-    objValueType = SingleValue partType,
-    objArgType = NoValue,
-    objDefn = ""
-    }
+-- arguments and return values.  The argument is which storage types are
+-- allowed in the tuple entries (as this depends on whether the tuple is
+-- function arguments, function return values, event arguments, or modifier
+-- arguments).
+tupleDeclaration :: [Storage] -> SolidityParser Tuple
+tupleDeclaration allowedStorage = 
+  fmap TupleValue $ parens $ commaSep $ toArgDef <$>
+  simpleVariableDeclaration allowedStorage
+
+-- | Parses the variable visibility modifiers to internal type
+visibilityModifier :: SolidityParser Visibility
+visibilityModifier =
+  (reserved "public" >> return PublicVisible) <|>
+  (reserved "private" >> return PrivateVisible) <|>
+  (reserved "internal" >> return InternalVisible) <|>
+  (reserved "external" >> return ExternalVisible)
+
+-- | Parses the variable storage modifiers to internal type
+storageModifier :: SolidityParser Storage
+storageModifier =
+  (reserved "constant" >> return ValueStorage) <|>
+  (reserved "storage" >> return StorageStorage) <|>
+  (reserved "memory" >> return MemoryStorage) <|>
+  (reserved "indexed" >> return IndexedStorage)
+
+-- | Parses all the things that can modify a variable declaration, which
+-- (fortunately, compared to functions) is just the visibility and storage
+-- modifiers.
+variableModifiers :: Storage -> SolidityParser (BasicType -> VarDef)
+variableModifiers defaultStorage =
+  permute $ (\v s ->
+    \variableType -> VarDef {
+      varType = variableType,
+      varVisibility = v,
+      varStorage = s
+    }) <$?>
+    (InternalVisible, visibilityModifier) <|?>
+    (defaultStorage, storageModifier)
 
 -- | Parses all the things that can modify a function declaration,
 -- including return value, explicit function modifiers, visibility and
 -- constant specifiers, and possibly base construtor arguments, in the case
 -- of a constructor.  These can appear in any order, so we have to use
 -- a special permutation parser for this.
-functionModifiers :: SolidityParser (SolidityTuple, Bool, Bool, String)
+functionModifiers :: SolidityParser (Tuple -> SourceCode -> FuncDef)
 functionModifiers =
-  permute $
-  (\a b c d1 d2 d3 d4 -> (a, b, c, unwords [d1, d2, d3, d4])) <$?>
-  (TupleValue [], returnModifier) <|?>
-  (True, visibilityModifier) <|?>
-  (True, mutabilityModifier) <|?>
-  ("", otherModifiers) <|?>
-  ("", otherModifiers) <|?>
-  ("", otherModifiers) <|?>
-  ("", otherModifiers) -- Fenceposts for the explicit modifiers
+  permute $ (\r v s _ _ _ _ ->
+    \args code -> FuncDef {
+      funcValueType = r,
+      funcArgType = args,
+      funcVisibility = v,
+      funcHasCode = not $ null code,
+      funcIsConstructor = False, -- Will be changed in due course
+      funcIsConstant = case s of {ValueStorage -> True; _ -> False}
+    }) <$?>
+    (TupleValue [], returnModifier) <|?>
+    (PublicVisible, visibilityModifier) <|?>
+    (MemoryStorage, storageModifier) <|?>
+    ("", otherModifiers) <|?>
+    ("", otherModifiers) <|?>
+    ("", otherModifiers) <|?>
+    ("", otherModifiers) -- Fenceposts for the explicit modifiers
+
   where
-    returnModifier =
-      reserved "returns" >> tupleDeclaration
-    visibilityModifier =
-      ((reserved "public" <|> reserved "external") >> return True) <|>
-      ((reserved "internal" <|> reserved "private") >> return False)
-    mutabilityModifier =
-      reserved "constant" >> return False
-    otherModifiers = fmap unwords $ many $ do
+    returnModifier = reserved "returns" >> tupleDeclaration [MemoryStorage]
+    otherModifiers = fmap (intercalate " ") $ many $ do
       name <- identifier
       args <- optionMaybe parensCode
       return $ name ++ maybe "" (\s -> "(" ++ s ++ ")") args
+

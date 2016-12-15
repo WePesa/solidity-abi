@@ -3,19 +3,20 @@
 -- Description: Function for assigning storage locations to variables and
 --   types in a parsed contract.
 -- Maintainer: Ryan Reich <ryan@blockapps.net>
-module Layout (makeContractsLayout) where
+module Layout (doLayout) where
 
+import Data.List
+import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Data.Maybe
+import Control.Monad.Trans.Reader
 
-import DefnTypes
-import ParserTypes
 import LayoutTypes
+import SolidityTypes
+import DAG
 
--- | 'makeContractsLayout' analyzes the ordered list of global storage
--- variables and assigns them byte locations in the blockchain contract's
--- storage.
+-- | 'doLayout' analyzes the ordered list of global storage variables and
+-- assigns them byte locations in the blockchain contract's storage.
 --
 -- Here are the rather picky rules for this:
 -- 
@@ -31,78 +32,138 @@ import LayoutTypes
 -- * The second exception to this is that struct and array variables always
 -- start and end in their own 32-byte slot.  That is, they start on
 -- a 32-byte boundary and the following variable does as well.
-makeContractsLayout :: SolidityContractsDef -> SolidityContractsLayout
-makeContractsLayout contracts = contractsL
-  where contractsL = Map.map (makeContractLayout contractsL) contracts
+doLayout :: ContractsByID 'AfterLinkage -> ContractsByID 'AfterLayout
+doLayout contracts = result
+  where result = Map.map (doContractLayout result) contracts
 
-makeContractLayout :: SolidityContractsLayout -> SolidityContractDef
-                      -> SolidityContractLayout
-makeContractLayout contractsL (ContractDef _ objs types _) =
-  ContractLayout {
-    objsLayout = makeObjsLayout typesL objs,
-    typesLayout = typesL
-    }      
-  where typesL = Map.map (makeTypeLayout contractsL typesL) types
+doContractLayout :: ContractsByID 'AfterLayout -> Contract 'AfterLinkage ->
+                    Contract 'AfterLayout
+doContractLayout
+  contracts 
+  c@Contract{
+    contractVars, contractTypes, contractStorageVars, contractBases,
+    contractLinkage = contractLinkage@CompleteLinkage{typesLinkage}
+    } =
+  c{
+    contractTypes = contractTypes{byID = typesL},
+    contractStorageVars = varsL,
+    contractLinkage = contractLinkage{typesLinkage = sizedLinkage},
+    contractBases
+   }
 
-makeTypeLayout :: SolidityContractsLayout -> SolidityTypesLayout -> SolidityNewType
-                   -> SolidityTypeLayout
-makeTypeLayout contractsL typesL t = case t of
-  ContractT -> ContractTLayout addressBytes
-  Enum names' -> EnumLayout (ceiling $ logBase (256::Double) $ fromIntegral $ length names')
-  Using contract name ->
-    UsingLayout (typeUsedBytes $ getType name $ typesLayout (getContract contract contractsL))
-    where
-      getContract contract' = Map.findWithDefault (error $ "contract " ++ show contract' ++ " not found in contractsL") contract'
-      getType name' = Map.findWithDefault (error $ "type " ++ show name' ++ "not found in typesLayout") name'
-  Struct fields' ->
-    let objsLayout' = makeObjsLayout typesL fields'
-        lastEnd = objEndBytes $ getObj (objName $ last fields') objsLayout' 
-        getObj name' = Map.findWithDefault (error $ "struct name " ++ show name' ++ " not found in objsLayout'") name'
-        usedBytes = nextLayoutStart lastEnd keyBytes        
-    in StructLayout objsLayout' usedBytes
-
-makeObjsLayout :: SolidityTypesLayout -> [SolidityObjDef] -> SolidityObjsLayout
-makeObjsLayout typesL objs =
-  let objsLf = mapMaybe (makeObjLayout typesL) objs
-      objOffEnds = 0:map ((+1) . objEndBytes . snd) objsL
-      objsL = zipWith ($) objsLf objOffEnds
-  in Map.fromList  objsL
-
-makeObjLayout :: SolidityTypesLayout -> SolidityObjDef
-                 -> Maybe (StorageBytes -> (Identifier, SolidityObjLayout))
-makeObjLayout typesL obj = case obj of
-  ObjDef{objName = name, objArgType = NoValue, objValueType = SingleValue t} ->
-    Just $ \lastOffEnd ->
-    let startBytes = nextLayoutStart lastOffEnd $ usedBytes t
-    in (name,
-        ObjLayout {
-          objStartBytes = startBytes,
-          objEndBytes = startBytes + usedBytes t - 1
-          })
-  _ -> Nothing
   where
-    usedBytes ty = case ty of
-      Boolean -> 1
-      Address -> addressBytes
-      SignedInt b -> b
-      UnsignedInt b -> b
-      FixedBytes b -> b
-      DynamicBytes -> keyBytes
-      String -> keyBytes
-      FixedArray typ l -> keyBytes * numKeys
-        where
-          elemSize = usedBytes typ
-          (newEach, numKeys) =
-            if elemSize <= 32
-            then (32 `quot` elemSize,
-                  l `quot` newEach + (if l `rem` newEach == 0 then 0 else 1))
-            else (1, l * (elemSize `quot` 32)) -- always have rem = 0
-      DynamicArray _ -> keyBytes
-      Mapping _ _ -> keyBytes
-      Typedef name -> typeUsedBytes $ Map.findWithDefault err name typesL
-        where err = error $
-                    "Name " ++ name ++ " is not a user-defined type or contract"
+    sizedLinkage = Map.map (addLinkSize contracts typesL) typesLinkage
+    (typesL, varsL) = runLayoutReader $ do
+      typesL <- mapM doTypeLayout cTypes
+      varsL <- doVarsLayout (byID contractVars) contractStorageVars
+      return (typesL, varsL)
+    runLayoutReader = 
+      flip runReader (contracts, typesL, typesLinkage)
+    cTypes = byID contractTypes
 
+addLinkSize :: ContractsByID 'AfterLayout -> Map DeclID (NewType 'AfterLayout) ->
+               TypeLink 'AfterLinkage -> TypeLink 'AfterLayout
+addLinkSize contracts types link = case link of
+  PlainLink dID -> 
+    PlainLink WithSize{sizeOf = typeSize $ types Map.! dID, stored = dID}
+  InheritedLink dID -> 
+    InheritedLink WithSize{sizeOf = typeSize $ types Map.! dID, stored = dID}
+  LibraryLink dID@DeclID{declContract = cID, declName} ->
+    let 
+      libTypes = contractTypes $ contracts Map.! cID
+      libType = byID libTypes Map.! (byName libTypes Map.! declName)
+    in LibraryLink WithSize{sizeOf = typeSize libType, stored = dID}
+  ContractLink cID -> 
+    ContractLink cID
+
+type LayoutReader =
+  Reader (
+    ContractsByID 'AfterLayout, 
+    Map DeclID (NewType 'AfterLayout), 
+    LinkageT 'AfterLinkage
+    )
+
+doTypeLayout :: NewType 'AfterLinkage -> LayoutReader (NewType 'AfterLayout)
+doTypeLayout enum@Enum{names} = 
+  return enum{
+    names = WithSize{
+      sizeOf = ceiling $ logBase (256::Double) $ fromIntegral $ length names,
+      stored = names
+      }
+    }
+doTypeLayout struct@Struct{fields} = do
+  fieldsLayout <- doVarTypesLayout $ map fieldType fields
+  return struct{
+    fields = WithSize{
+      sizeOf = 1 + endPos (head fieldsLayout), -- fields are reversed
+      stored = Map.fromList $ zipWith makeFieldDefL fields fieldsLayout
+      }
+    }
+
+  where makeFieldDefL fD fDL = (fieldName fD, const (fieldType fD) <$> fDL)
+
+doVarsLayout :: Map DeclID VarDef -> StorageVars 'AfterLinkage ->
+                LayoutReader (StorageVars 'AfterLayout)
+doVarsLayout varDefs varIDs = do
+  varLayouts <- doVarTypesLayout $ map (varType . (varDefs Map.!)) varIDs
+  return $ zipWith makePosID varIDs varLayouts 
+
+  where makePosID vID varPos = const vID <$> varPos
+
+doVarTypesLayout :: [BasicType] -> LayoutReader [WithPos ()]
+doVarTypesLayout =
+  -- vars are listed from high storage to low; we work from the right
+  foldr (\v vLs -> makeNextVarL v vLs) (return []) 
+  where
+    makeNextVarL v vLsR = do
+      vLs <- vLsR
+      case vLs of
+        [] -> sequence [doVarLayout 0 v]
+        l@(vL : rest) -> do
+          vL' <- doVarLayout (endPos vL + 1) v
+          return $ vL' : l
+
+doVarLayout :: StorageBytes -> BasicType -> LayoutReader (WithPos ())
+doVarLayout lastOffEnd varT = do
+  tUsed <- usedBytes varT
+  let startPos = nextLayoutStart lastOffEnd tUsed
+  return WithPos{
+    startPos,
+    endPos = startPos + tUsed - 1,
+    stored = ()
+    }
+
+usedBytes :: BasicType -> LayoutReader StorageBytes
+usedBytes t = case t of
+  Boolean -> return 1
+  Address -> return addressBytes
+  SignedInt b -> return b
+  UnsignedInt b -> return b
+  FixedBytes b -> return b
+  DynamicBytes -> return keyBytes
+  String -> return keyBytes
+  FixedArray typ l -> do
+    elemSize <- usedBytes typ
+    let
+      (newEach, numKeys) =
+        if elemSize <= 32
+        then (32 `quot` elemSize,
+              l `quot` newEach + (if l `rem` newEach == 0 then 0 else 1))
+        else (1, l * (elemSize `quot` 32)) -- always have rem = 0
+    return $ keyBytes * numKeys
+  DynamicArray _ -> return keyBytes
+  Mapping _ _ -> return keyBytes
+  LinkT{linkTo} -> do
+    (contracts, typesL, typeLinks) <- ask 
+    return $ case typeLinks Map.! linkTo of
+      ContractLink _ -> 
+        addressBytes
+      PlainLink dID -> 
+        typeSize $ typesL Map.! dID
+      InheritedLink dID -> 
+        typeSize $ typesL Map.! dID
+      LibraryLink dID@DeclID{declContract} ->
+        typeSize $ (byID $ contractTypes $ contracts Map.! declContract) Map.! dID
 
 nextLayoutStart :: StorageBytes -> StorageBytes -> StorageBytes
 nextLayoutStart 0 _ = 0
@@ -117,3 +178,4 @@ nextLayoutStart lastOffEnd thisSize =
   in  if startKey0 == endKey0
       then thisStart0
       else thisStart1
+
