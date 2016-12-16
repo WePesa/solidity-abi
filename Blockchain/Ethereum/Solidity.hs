@@ -8,7 +8,7 @@ module Blockchain.Ethereum.Solidity (
   module SolidityTypes,
   ) where
 
-import JSON
+import JSON ()
 import Structure
 import SolidityTypes
 

@@ -4,7 +4,6 @@
 -- Maintainer: Ryan Reich <ryan@blockapps.net>
 module FilePaths (fixAllPaths) where
 
-import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Data.Bifunctor
@@ -20,8 +19,8 @@ fixAllPaths = makeImportsRelative . mapKeysWithKey handleCollision collapse
   where
     handleCollision fn _ _ = 
       error $ "The file path " ++ fn ++ " refers to two different source files"
-    mapKeysWithKey combine f m = 
-      Map.fromListWithKey combine $ Map.foldrWithKey (\k x xs -> (f k, x) : xs) [] m
+    mapKeysWithKey combine' f m = 
+      Map.fromListWithKey combine' $ Map.foldrWithKey (\k x xs -> (f k, x) : xs) [] m
 
 makeImportsRelative :: SolidityFiles -> SolidityFiles
 makeImportsRelative = Map.mapWithKey $ modifyImportsBy . takeDirectory

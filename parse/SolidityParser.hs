@@ -30,11 +30,11 @@ initContract fileName name isLibrary =
 -- | Constructs a "declaration ID" out of the given identifier.  This ID is
 -- file-independent, which is important for handling qualified or aliasing imports.
 makeDeclID :: Identifier -> SolidityParser DeclID
-makeDeclID id = do
+makeDeclID iD = do
   (cID, _) <- getState
   return DeclID{
     declContract = cID,
-    declName = id
+    declName = iD
     }
 
 -- | Adds a new variable with the given name and definition.  This is

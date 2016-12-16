@@ -26,6 +26,6 @@ parseToStructure =
 
 makeContractsByFile :: ContractsByID 'AfterLayout -> ContractsByFile 'AfterLayout
 makeContractsByFile = 
-  Map.map (Map.fromList) . Map.fromListWith (++) . Map.foldrWithKey pushAssoc []
+  Map.map Map.fromList . Map.fromListWith (++) . Map.foldrWithKey pushAssoc []
   where pushAssoc cID c = ( (contractFile cID, [(contractName cID, c)]) : )
 

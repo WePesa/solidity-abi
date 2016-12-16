@@ -8,8 +8,7 @@ module DAG (
   checkDAG
   ) where
 
-import Data.Foldable
-import Data.Traversable
+import Control.Monad
 import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.Semigroup
@@ -29,7 +28,7 @@ instance (Semigroup (t a)) => Monoid (SlurpState t a) where
 
 -- | Validates a DAG for missing node names and cycles.
 checkDAG :: (Ord a, Traversable t, Semigroup (t a)) => Map a (t a) -> Either (DAGError a) ()
-checkDAG dMap = checkDAG' (Map.map Normal dMap) >> return ()
+checkDAG dMap = void $ checkDAG' (Map.map Normal dMap)
 
 checkDAG' :: (Ord a, Traversable t, Semigroup (t a)) => Map a (SlurpState t a) -> Either (DAGError a) ()
 checkDAG' dMap =
@@ -45,10 +44,10 @@ slurpOnce dMap = Map.mapWithKey shiftState dMap
     shiftState x (Normal y) = checkCycles $ foldMap getKey y
       where
         getKey k = Map.findWithDefault (Fail $ DAGMissing x k) k dMap
-        checkCycles z@(Normal y) =
-          if x `elem` y
+        checkCycles z@(Normal y') =
+          if x `elem` y'
           then Fail $ DAGCycle x
           else z
-        checkCycles x = x
+        checkCycles z = z
     shiftState _ x = x
 

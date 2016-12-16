@@ -5,7 +5,6 @@
 -- Maintainer: Ryan Reich <ryan@blockapps.net>
 module Layout (doLayout) where
 
-import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -13,7 +12,6 @@ import Control.Monad.Trans.Reader
 
 import LayoutTypes
 import SolidityTypes
-import DAG
 
 -- | 'doLayout' analyzes the ordered list of global storage variables and
 -- assigns them byte locations in the blockchain contract's storage.
@@ -54,9 +52,9 @@ doContractLayout
   where
     sizedLinkage = Map.map (addLinkSize contracts typesL) typesLinkage
     (typesL, varsL) = runLayoutReader $ do
-      typesL <- mapM doTypeLayout cTypes
-      varsL <- doVarsLayout (byID contractVars) contractStorageVars
-      return (typesL, varsL)
+      typesL' <- mapM doTypeLayout cTypes
+      varsL' <- doVarsLayout (byID contractVars) contractStorageVars
+      return (typesL', varsL')
     runLayoutReader = 
       flip runReader (contracts, typesL, typesLinkage)
     cTypes = byID contractTypes
@@ -113,13 +111,13 @@ doVarsLayout varDefs varIDs = do
 doVarTypesLayout :: [BasicType] -> LayoutReader [WithPos ()]
 doVarTypesLayout =
   -- vars are listed from high storage to low; we work from the right
-  foldr (\v vLs -> makeNextVarL v vLs) (return []) 
+  foldr makeNextVarL $ return []
   where
     makeNextVarL v vLsR = do
       vLs <- vLsR
       case vLs of
         [] -> sequence [doVarLayout 0 v]
-        l@(vL : rest) -> do
+        l@(vL : _) -> do
           vL' <- doVarLayout (endPos vL + 1) v
           return $ vL' : l
 
@@ -163,7 +161,7 @@ usedBytes t = case t of
       InheritedLink dID -> 
         typeSize $ typesL Map.! dID
       LibraryLink dID@DeclID{declContract} ->
-        typeSize $ (byID $ contractTypes $ contracts Map.! declContract) Map.! dID
+        typeSize $ byID (contractTypes $ contracts Map.! declContract) Map.! dID
 
 nextLayoutStart :: StorageBytes -> StorageBytes -> StorageBytes
 nextLayoutStart 0 _ = 0

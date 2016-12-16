@@ -8,7 +8,6 @@ module Qualify (
   ) where
 
 import Data.Bifunctor
-import Data.Function
 import Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -40,8 +39,8 @@ getQualifiedNames qs m = Map.foldrWithKey (\k _ _ -> Left $ GlobalNameMissing k)
 qualifyNames :: (Ord b, Ord c) => a -> QualifyAs b c -> Map b d -> Either (QualifyError a b c) (Map c d)
 qualifyNames name (QualifyAll f) m = fromListWithError name $ Map.foldrWithKey (\k x xs -> (f k, x) : xs) [] m
 qualifyNames name (QualifySome l) m = fromListWithError name =<< mapM (getName m) l
-  where getName m (k, x) = do
-          val <- Map.findWithDefault (Left $ LocalNameMissing name k) k $ Map.map Right m
+  where getName m' (k, x) = do
+          val <- Map.findWithDefault (Left $ LocalNameMissing name k) k $ Map.map Right m'
           return (x, val)
 
 fromListWithError :: (Ord c) => a -> [(c, d)] -> Either (QualifyError a b c) (Map c d)

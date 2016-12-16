@@ -6,11 +6,12 @@
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Selector (selector) where
 
+import Control.Monad.Trans.Reader
+
 import qualified Data.ByteString as BS
 import Data.ByteString (ByteString)
 
 import qualified Data.Map as Map
-import Data.Maybe
 import qualified Data.Text as T
 import Data.Text.Encoding
 import Text.PrettyPrint
@@ -64,7 +65,7 @@ sig (DynamicArray t) = do
 sig (Mapping d c) = do
   dSig <- sig d
   cSig <- sig c
-  return $ text "mapping" <+> (parens $ dSig <+> text "=>" <+> cSig)
+  return $ text "mapping" <+> parens (dSig <+> text "=>" <+> cSig)
 sig (LinkT linkID) = do
   linkage <- ask
   case linkage Map.! linkID of
@@ -72,5 +73,6 @@ sig (LinkT linkID) = do
     InheritedLink WithSize{sizeOf} -> sig $ UnsignedInt sizeOf
     PlainLink WithSize{sizeOf} -> sig $ UnsignedInt sizeOf
     LibraryLink WithSize{sizeOf} -> sig $ UnsignedInt sizeOf
+    _ -> error "Found what I thought should be an enum but without its size"
 
 natural = integer . toInteger

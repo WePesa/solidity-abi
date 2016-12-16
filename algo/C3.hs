@@ -26,7 +26,7 @@ c3Linearize xM = xLM
 c3Memoize :: (Ord a) => Map a (NonEmpty a) -> a -> [a] -> NonEmpty a
 c3Memoize xLM x xDeps = c3Combine x $ P.map getDeps xDeps
   where
-    getDeps y = Map.findWithDefault (error $ "Invalid base class found") y xLM
+    getDeps y = Map.findWithDefault (error "Invalid base class found") y xLM
 
 c3Combine :: (Eq a) => a -> [NonEmpty a] -> NonEmpty a
 c3Combine x [] = fromList [x]
@@ -43,8 +43,9 @@ c3Split x = (h, if null t then Nothing else Just $ fromList t)
   where
     t = foldr takeNonHeads [] xEL
     h = case dropWhile isRight xEL of
-          [] -> error $ "Cyclic inheritance graph" 
+          [] -> error "Cyclic inheritance graph" 
           Left hl : _ -> head hl
+          _ -> error "All Right values should have been dropped"
     xEL = map (\l@(h' :| _) -> (if any ((h' `elem`) . tail) x then Right else Left) l) x
     takeNonHeads xE l = either (addNonEmpty l . tail) (: l) xE
     addNonEmpty ll l = if null l then ll else fromList l : ll

@@ -21,7 +21,6 @@ import qualified Data.Vector as Vector
 
 import Control.Monad.Trans.Reader
 import Data.Monoid
-import Numeric.Natural
 
 import SolidityTypes
 import Selector
@@ -35,11 +34,11 @@ class (Monoid kv, ToJSON kv) => KeyValue kv where
   (.=) :: (ToJSON v) => Text -> v -> kv
 
 instance KeyValue AssocJSON where
-  (.=) k (toJSON -> Object x) | HashMap.null x = AssocJSON []
-  (.=) k (toJSON -> Array x) | Vector.null x = AssocJSON []
-  (.=) k (toJSON -> Aeson.String x) | Text.null x = AssocJSON []
-  (.=) k (toJSON -> Bool x) | not x = AssocJSON []
-  (.=) k (toJSON -> Null) = AssocJSON []
+  (.=) _ (toJSON -> Object x) | HashMap.null x = AssocJSON []
+  (.=) _ (toJSON -> Array x) | Vector.null x = AssocJSON []
+  (.=) _ (toJSON -> Aeson.String x) | Text.null x = AssocJSON []
+  (.=) _ (toJSON -> Bool x) | not x = AssocJSON []
+  (.=) _ (toJSON -> Null) = AssocJSON []
   (.=) k (toJSON -> v) = AssocJSON [k Aeson..= v]
 
 instance ToJSON (Contract 'AfterLayout) where
@@ -48,8 +47,8 @@ instance ToJSON (Contract 'AfterLayout) where
 
 contractToJSON :: forall kv. (KeyValue kv) => Contract 'AfterLayout -> kv
 contractToJSON c = flip runReader typesLinkage $ do
-  sJSON :: [kv] <- sequence $
-    map (storageVarToJSON . fmap getVarType) storageList
+  sJSON :: [kv] <- 
+    mapM (storageVarToJSON . fmap getVarType) storageList
   fJSON :: Map Identifier kv <- sequence $
     Map.mapWithKey funcToJSON (defsByName $ contractFuncs c)
   eJSON :: Map Identifier kv <- sequence $ 
@@ -57,7 +56,7 @@ contractToJSON c = flip runReader typesLinkage $ do
   tJSON :: Map String kv <- sequence $ 
     Map.map typeToJSON (Map.mapKeys showDeclJSON $ byID $ contractTypes c) 
   cJSON :: Maybe (Map Identifier kv) <- sequence $
-    (tupleToJSON . funcArgType) <$> (Map.lookup constrID $ byID $ contractFuncs c)
+    (tupleToJSON . funcArgType) <$> Map.lookup constrID (byID $ contractFuncs c)
   return $
     "storage" .= sJSON <>
     "funcs" .= fJSON <>
@@ -68,9 +67,9 @@ contractToJSON c = flip runReader typesLinkage $ do
     "libraries" .= map contractName librariesLinkage <>
     "vars" .= 
       Map.map (storageMap Map.!) (
-        (byName $ contractVars c)
+        byName (contractVars c)
         `Map.intersection`
-        (Map.filter isStorageVar $ defsByName $ contractVars c)
+        Map.filter isStorageVar (defsByName $ contractVars c)
         )
 
   where
@@ -114,6 +113,7 @@ typeToJSON Struct{fields = WithSize{sizeOf, stored}} = do
     "type" .= ("Struct" :: Text) <>
     "bytes" .= toInteger sizeOf <>
     "fields" .= fJSON
+typeToJSON _ = error "Found a struct whose fields did not include the total size"
 
 tupleToJSON :: forall kv. (KeyValue kv) => Tuple -> JSONReader (Map Identifier kv)
 tupleToJSON (TupleValue argsDef) = do
@@ -139,6 +139,7 @@ storageVarToJSON WithPos{startPos, stored} = do
   return $
     "atBytes" .= toInteger startPos <>
     typeABI
+storageVarToJSON _ = error "Found a storage var without a storage position"
 
 basicTypeJSON :: forall kv. (KeyValue kv) => BasicType -> JSONReader kv
 basicTypeJSON t = case t of
@@ -194,6 +195,7 @@ basicTypeJSON t = case t of
       LibraryLink WithSize{stored} ->
         "linkedType" .= showDeclJSON stored <>
         "library" .= contractName (declContract stored)
+      _ -> error "Found a non-contract link without size given"
 
 showDeclJSON :: DeclID -> String
 showDeclJSON DeclID{declContract, declName} = 

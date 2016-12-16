@@ -60,7 +60,7 @@ library
                        cryptohash,
                        unordered-containers,
                        vector,
-                       hscolour
+                       hscolour,
                        transformers
   hs-source-dirs:      .
                        algo
@@ -84,3 +84,4 @@ Test-Suite test-solidity-abi
   build-depends:
     base, solidity-abi, containers, aeson, tasty, tasty-hunit
   default-language: Haskell2010
+

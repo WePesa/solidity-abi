@@ -3,6 +3,7 @@
 -- Description: Resolves all import _and_ inheritance in a set of contracts by file
 -- Maintainer: Ryan Reich <ryan@blockapps.net>
 {-# LANGUAGE NamedFieldPuns, OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
 module Inheritance (doInheritance) where
 
 import Data.Map (Map)
@@ -43,7 +44,7 @@ importAndLinearize files = either throwImportError id $ do
 linearizeFile :: ContractsByFile 'AfterInheritance -> FileName -> SolidityFile ->
                  ContractsByName 'AfterInheritance
 linearizeFile resolved name SolidityFile{fileContracts, fileImports} = 
-  either (error $ "Import error") id $ do
+  either (error "Import error") id $ do
     imported <- getImportDefs resolved name fileImports
     return $ contractsL `Map.union` imported  
 
@@ -79,8 +80,6 @@ getImportDefs fileDefs mainFileName imports = do
     convertImportAs Unqualified = QualifyAll id
     convertImportAs (StarPrefix p) = QualifyAll ((p ++ ".") ++)
     convertImportAs (Aliases as) = QualifySome as
-    unionWithError x = 
-      Map.unionWithKey (\k _ _ -> Left $ DuplicateSymbol mainFileName x k) . Map.map Right
 
 validateImports :: Map FileName SolidityFile -> Either ImportError ()
 validateImports files = 
@@ -128,5 +127,5 @@ throwImportError (MissingImport fBase fName) =
     "inFile" .= fBase
     ]
 
-throwImportError _ = error $ "An import error occurred, probably a cycle"
+throwImportError _ = error "An import error occurred, probably a cycle"
 

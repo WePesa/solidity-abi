@@ -7,9 +7,7 @@ module Declarations (solidityContract) where
 
 import Control.Monad
 
-import Data.Either
 import Data.List
-import Data.Maybe
 
 import Text.Parsec
 import Text.Parsec.Perm
@@ -28,16 +26,15 @@ solidityContract fileName = do
   optional $ do
     reserved "is"
     commaSep1 $ do
-      name <- intercalate "." <$> sepBy1 identifier dot
+      name' <- intercalate "." <$> sepBy1 identifier dot
       _ <- option "" parensCode
-      addBase name -- Executed left-to-right, but reversed by prepending
+      addBase name' -- Executed left-to-right, but reversed by prepending
     return ()
   braces $ skipMany solidityDeclaration
   isAbstract <- getIsAbstract
 
-  if isAbstract && isLibrary
-  then parserFail $ "Library " ++ name ++ " may not be an abstract contract"
-  else return ()
+  when (isAbstract && isLibrary) $
+    parserFail $ "Library " ++ name ++ " may not be an abstract contract"
 
 -- | Parses anything that a contract can declare at the top level: new types,
 -- variables, functions primarily, also events and function modifiers.
@@ -137,7 +134,7 @@ eventDeclaration = do
   when (length logsL > 4) $ fail $ "Event " ++ name ++ " has more than 4 topics"
   isAnon <- option False $ reserved "anonymous" >> return True
   semi
-  addEvent name $ EventDef {
+  addEvent name EventDef{
     eventTopics = logs,
     eventIsAnonymous = isAnon
     }
@@ -151,7 +148,7 @@ modifierDeclaration = do
   name <- identifier
   args <- option (TupleValue []) $ tupleDeclaration [MemoryStorage]
   defn <- bracedCode
-  addModifier name $ ModifierDef {
+  addModifier name ModifierDef{
     modArgs = args,
     modDefn = defn
     }
@@ -189,8 +186,8 @@ storageModifier =
 -- modifiers.
 variableModifiers :: Storage -> SolidityParser (BasicType -> VarDef)
 variableModifiers defaultStorage =
-  permute $ (\v s ->
-    \variableType -> VarDef {
+  permute $ (\v s variableType ->
+    VarDef {
       varType = variableType,
       varVisibility = v,
       varStorage = s
@@ -205,8 +202,8 @@ variableModifiers defaultStorage =
 -- a special permutation parser for this.
 functionModifiers :: SolidityParser (Tuple -> SourceCode -> FuncDef)
 functionModifiers =
-  permute $ (\r v s _ _ _ _ ->
-    \args code -> FuncDef {
+  permute $ (\r v s _ _ _ _ args code ->
+    FuncDef {
       funcValueType = r,
       funcArgType = args,
       funcVisibility = v,
@@ -224,7 +221,7 @@ functionModifiers =
 
   where
     returnModifier = reserved "returns" >> tupleDeclaration [MemoryStorage]
-    otherModifiers = fmap (intercalate " ") $ many $ do
+    otherModifiers = fmap unwords $ many $ do
       name <- identifier
       args <- optionMaybe parensCode
       return $ name ++ maybe "" (\s -> "(" ++ s ++ ")") args

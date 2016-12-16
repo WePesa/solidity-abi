@@ -5,10 +5,8 @@
 -- Maintainer: Ryan Reich <ryan@blockapps.net>
 module Linkage (doLinkage) where
 
-import Data.Map (Map)
-import qualified Data.Map as Map
-
 import qualified Data.List.NonEmpty as NonEmpty
+import qualified Data.Map as Map
 
 import Control.Monad
 import Data.Maybe
@@ -20,7 +18,7 @@ import SolidityTypes
 -- the DAG of library references.
 doLinkage :: ContractsByID 'AfterInheritance -> ContractsByID 'AfterLinkage
 doLinkage contracts = either (error "Library missing or cycle detected") id $ do
-  result <- return $ Map.map (doContractLinkage contracts) contracts
+  let result = Map.map (doContractLinkage contracts) contracts
   validateLibraries result 
   return result
 
@@ -52,7 +50,7 @@ doContractLinkage
 resolveLink :: ContractsByID 'AfterInheritance -> Contract 'AfterInheritance ->
                RoughLink -> DetailedLink 'Incomplete
 resolveLink contracts contract (UnqualifiedLink name) = 
-  tryPlainType $ tryContract $ theError
+  tryPlainType $ tryContract theError
   where
     tryPlainType :: DetailedLink 'Incomplete -> DetailedLink 'Incomplete
     tryPlainType x = fromMaybe x $ do
@@ -73,7 +71,7 @@ resolveLink contracts contract (UnqualifiedLink name) =
       " in that file"
 
 resolveLink contracts contract QualifiedLink{linkQualifier, linkName} =
-  tryInherited $ tryLibrary $ tryContract $ theError
+  tryInherited $ tryLibrary $ tryContract theError
   where
     tryInherited :: DetailedLink 'Incomplete -> DetailedLink 'Incomplete
     tryInherited x = fromMaybe x $ do

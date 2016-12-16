@@ -5,7 +5,6 @@
 {-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
 module Types where
 
-import Data.List
 import Data.Maybe
 import Text.Parsec
 
