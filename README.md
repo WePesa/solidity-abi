@@ -96,26 +96,31 @@ produce JSON of the following form
 ```js
 contract = {
    "realName" : string (name contract was defined with),
-   "vars" : {
-     "var name" : variable (visible externally)
+   "storage" : [
+     storage location,
+     ... 
+   ],
+   "vars" : { 
+     "var name" : integer (corresponding index in `storage` list)
      ...
    },
    "funcs" : {
      "func name" : function (visible externally),
      ...
    },
-   "types" : {
-     "type name" : type defn,
+   "events" : {
+     "event name" : event,
      ...
    },
-   "libraryTypes" : {
-      "library name" : {
-        "type name" : type defn,
-        ...
-      },
-      ...
+   "types" : {
+     "fully qualified type name" : type,
+     ...
    },
    "constr" : function args,
+   "libraries" : [ // All libraries referenced in the contract
+     "library name",
+     ...
+   ],
    // For libraries only
    "library" : true
 }
@@ -132,7 +137,7 @@ describing its entries, if it is an array; and a few type-specific
 fields as shown below.
 
 ```js
-variable = {
+storage location = {
   "atBytes" : decimal number (byte position in storage),
   basic type ABI
 }
@@ -166,9 +171,11 @@ basic type ABI = {
   "dynamic" : true,
   "key" : basic type ABI of keyT,
   "value" : basic type ABI of valT
-  // name
-  "typedef" : name (identifier of user-defined type)
-  "library" : name (name of library containing the type; absent if not from a library)
+  // contract type
+  "linkedContract" : string (contract name)
+  // user-defined type
+  "linkedType" : string (type name, fully qualified by origin)
+  "library" : string (name of library containing the type; absent if not from a library)
 }
 ```
 
@@ -191,6 +198,25 @@ function args = {
   ...
 }
 ```
+
+### Events
+event = {
+  "selector" : 4-byte hex string (only if event is not anonymous),
+  "topics" : event topics
+}
+event topics = {
+  "topic name" : {
+    "index" : decimal integer (place in argument list),
+    "indexed" : boolean (if the topic is indexed)
+    basic type ABI
+  },
+  "#n" : {
+    "index" : decimal integer (= n, only if this arg is unnamed),
+    "indexed" : boolean (if the topic is indexed)
+    basic type ABI
+  },
+  ...
+}
 
 ### Types
 
