@@ -1,49 +1,57 @@
-module Parser.BasicTypes (test, basicTypeTestInput) where
+module Structure.BasicTypes (test, basicTypeTestInput) where
 
-import Blockchain.Ethereum.Solidity.Parse hiding (bytes)
-import Parser.Common
+import qualified Data.Map as Map
+
+import Blockchain.Ethereum.Solidity
+import Structure.Common
 import Test.Combinators
 import Test.Common
 
 test :: TestTree
-test = doTests "basicTypes" parserTest [
+test = doTests "basicTypes" structureTest [
   intVar, intSizedVar, uintVar, uintSizedVar,
   byteVar, bytesSizedVar, bytesVar,
   boolVar, addressVar, stringVar
   ]
 
-intVar :: ParserTestInput
+intVar :: StructureTestInput
 intVar = basicTypeTestInput "intVar" "int" (SignedInt 32)
 
-intSizedVar :: ParserTestInput
+intSizedVar :: StructureTestInput
 intSizedVar = basicTypeTestInput "intSizedVar" "int64" (SignedInt 8)
 
-uintVar :: ParserTestInput
+uintVar :: StructureTestInput
 uintVar = basicTypeTestInput "uintVar" "uint" (UnsignedInt 32)
 
-uintSizedVar :: ParserTestInput
+uintSizedVar :: StructureTestInput
 uintSizedVar = basicTypeTestInput "uintSizedVar" "uint160" (UnsignedInt 20)
 
-byteVar :: ParserTestInput
+byteVar :: StructureTestInput
 byteVar = basicTypeTestInput "byteVar" "byte" (FixedBytes 1)
 
-bytesSizedVar :: ParserTestInput
+bytesSizedVar :: StructureTestInput
 bytesSizedVar = basicTypeTestInput "bytesSizedVar" "bytes17" (FixedBytes 17)
 
-bytesVar :: ParserTestInput
+bytesVar :: StructureTestInput
 bytesVar = basicTypeTestInput "bytesVar" "bytes" DynamicBytes
 
-boolVar :: ParserTestInput
+boolVar :: StructureTestInput
 boolVar = basicTypeTestInput "boolVar" "bool" Boolean
 
-addressVar :: ParserTestInput
+addressVar :: StructureTestInput
 addressVar = basicTypeTestInput "addressVar" "address" Address
 
-stringVar :: ParserTestInput
+stringVar :: StructureTestInput
 stringVar = basicTypeTestInput "stringVar" "string" String
 
-basicTypeTestInput :: String -> String -> SolidityBasicType -> ParserTestInput
-basicTypeTestInput name typeName t = (name, source, tester) where
+basicTypeTestInput :: String -> String -> BasicType -> StructureTestInput
+basicTypeTestInput name typeName t = (name, sources, tester) where
+  sources = Map.singleton name source
   source = contractDefn name $ varDecl typeName "x"
-  tester solFile = varTypeIs name solFile name "x" t
+  tester contracts = varDefnIs name contracts name "x" $
+    VarDef{
+      varVisibility = InternalVisible,
+      varStorage = StorageStorage,
+      varType = t
+      }
 

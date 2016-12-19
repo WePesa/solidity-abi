@@ -1,12 +1,14 @@
-module Parser.Functions (test, functionTestInput) where
+module Structure.Functions (test, functionTestInput) where
 
-import Blockchain.Ethereum.Solidity.Parse
-import Parser.Common
+import qualified Data.Map as Map
+
+import Blockchain.Ethereum.Solidity
+import Structure.Common
 import Test.Combinators
 import Test.Common
 
 test :: TestTree
-test = doTests "functions" parserTest [
+test = doTests "functions" structureTest [
   functionNoArgsNoVals,
   functionOneArg,
   functionOneVal,
@@ -16,54 +18,69 @@ test = doTests "functions" parserTest [
   functionUnnamedVal
   ]
 
-functionNoArgsNoVals :: ParserTestInput
+functionNoArgsNoVals :: StructureTestInput
 functionNoArgsNoVals = functionTestInput "functionNoArgsNoVals" "f" [] [] [] [] [] []
 
-functionOneArg :: ParserTestInput
+functionOneArg :: StructureTestInput
 functionOneArg = 
   functionTestInput "functionOneArg" "f" 
     ["int"] ["x"] [SignedInt 32]
     [] [] []
 
-functionOneVal :: ParserTestInput
+functionOneVal :: StructureTestInput
 functionOneVal = 
   functionTestInput "functionOneVal" "f" 
     [] [] [] 
     ["int"] ["x"] [SignedInt 32]
 
-functionTwoArgs :: ParserTestInput
+functionTwoArgs :: StructureTestInput
 functionTwoArgs =
   functionTestInput "functionTwoArgs" "f"
     ["int", "uint[]"] ["x", "y"] [SignedInt 32, DynamicArray $ UnsignedInt 32]
     [] [] []
 
-functionTwoVals :: ParserTestInput
+functionTwoVals :: StructureTestInput
 functionTwoVals =
   functionTestInput "functionTwoVals" "f"
     [] [] []
     ["int", "uint[]"] ["x", "y"] [SignedInt 32, DynamicArray $ UnsignedInt 32]
 
-functionUnnamedArg :: ParserTestInput
+functionUnnamedArg :: StructureTestInput
 functionUnnamedArg =
   functionTestInput "functionUnnamedArg" "f" 
     ["int"] [""] [SignedInt 32]
     [] [] []
 
-functionUnnamedVal :: ParserTestInput
+functionUnnamedVal :: StructureTestInput
 functionUnnamedVal =
   functionTestInput "functionUnnamedVal" "f" 
     [] [] []
     ["int"] [""] [SignedInt 32]
 
-functionTestInput :: String -> String -> [String] -> [Identifier] -> [SolidityBasicType] ->
-                     [String] -> [Identifier] -> [SolidityBasicType] -> ParserTestInput
+functionTestInput :: String -> String -> [String] -> [Identifier] -> [BasicType] ->
+                     [String] -> [Identifier] -> [BasicType] -> StructureTestInput
 functionTestInput cName fName args argNames argTypes vals valNames valTypes =
-  (cName, source, tester)
+  (cName, sources, tester)
   where
+    sources = Map.singleton cName source
     source = 
       contractDefn cName $ functionDecl fName args' vals'
-    tester solFile = 
-      functionSignatureIs cName solFile cName fName argNames argTypes valNames valTypes
+    tester contracts = 
+      functionDefnIs cName contracts cName fName defn
     args' = zipWith (##) args argNames
     vals' = zipWith (##) vals valNames
+    defn = FuncDef{
+      funcVisibility = PublicVisible,
+      funcHasCode = True,
+      funcIsConstant = False,
+      funcIsConstructor = False,
+      funcArgType = TupleValue $ makeTuple argNames argTypes,
+      funcValueType = TupleValue $ makeTuple valNames valTypes
+      }
+    makeTuple = zipWith $ \n t ->
+      ArgDef{
+        argName = n,
+        argType = t,
+        argStorage = MemoryStorage
+        }
 

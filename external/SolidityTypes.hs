@@ -3,7 +3,7 @@
 -- Description: Types used throughout solidity-abi, primarily the ones
 --   containing the structure of a parsed contract.  
 -- Maintainer: Ryan Reich <ryan@blockapps.net>
-{-# LANGUAGE UndecidableInstances, TypeFamilies, DeriveFunctor #-}
+{-# LANGUAGE UndecidableInstances, TypeFamilies, DeriveFunctor, StandaloneDeriving, FlexibleInstances #-}
 module SolidityTypes where
 
 import Data.Map (Map)
@@ -17,21 +17,26 @@ import Numeric.Natural
 -- | The structure of a parsed contract.
 -- The Stage business unifies the changing formats of this structure as the
 -- parsing and anaysis continues.  
+type ContractStructure = Contract 'AfterLayout
 data Contract (stage :: Stage) =
   Contract {
     -- These fields depend on the stage.
     -- | Types defined in the contract
     contractTypes :: DeclarationsBy (NewType stage),
     -- | Storage variables.  Unlike generic variables, these have to be
-    -- stored sequentially because the order of declaration matters.
-    contractStorageVars :: StorageVars stage, -- In order of decreasing storage location
+    -- stored sequentially (in order of decreasing storage location)
+    -- because the order of declaration matters.
+    contractStorageVars :: StorageVars stage,
     -- | Base contracts for inheritance.  These also have to be stored
-    -- sequentially, for the sake of the C3 algorithm
-    contractBases :: BaseContracts stage, -- In order of increasingly base
+    -- sequentially, in order of decreasing derivedness, for the sake of
+    -- the C3 algorithm
+    contractBases :: BaseContracts stage,
     -- | References to other contracts, which can occur in various ways.
     contractLinkage :: Linkage stage,
 
     -- These fields don't depend on the stage
+    -- | The original name of the contract, before import aliasing
+    contractRealName :: ContractName,
     -- | All variables, storage or not.
     contractVars :: DeclarationsBy VarDef,
     -- | All functions
@@ -68,6 +73,8 @@ data DeclarationsBy a =
     byName :: Map Identifier DeclID,
     byID :: Map DeclID a
     }
+byNameDirectly :: DeclarationsBy a -> Map Identifier a
+byNameDirectly declsBy = Map.map (byID declsBy Map.!) $ byName declsBy
 
 -- | All metadata for a variable definition.  This is effectively just
 -- a type with a few modifiers as to when it shows up.
@@ -77,6 +84,7 @@ data VarDef =
     varType :: BasicType,
     varStorage :: Storage
     }
+  deriving (Eq, Show)
 
 -- | All metadata for a function definition.  We don't store the body since
 -- it doesn't affect the externally visible contract structure, but we do
@@ -91,6 +99,7 @@ data FuncDef =
     funcIsConstructor :: Bool,
     funcIsConstant :: Bool
     }
+  deriving (Eq, Show)
 
 -- | All metadata for an event definition.  Events have almost no
 -- structure.
@@ -99,6 +108,7 @@ data EventDef =
     eventTopics :: Tuple,
     eventIsAnonymous :: Bool
     }
+  deriving (Eq, Show)
 
 -- | All metadata for a modifier definition.  We hardly do anything with
 -- modifiers, so we just store the arguments and body without any
@@ -108,6 +118,7 @@ data ModifierDef =
     modDefn :: String,
     modArgs :: Tuple
     }
+  deriving (Eq, Show)
 
 -- | A variant of VarDef for a function argument or co-argument (i.e.
 -- return value).  The difference is that while variables are generally
@@ -120,6 +131,7 @@ data ArgDef =
     argType :: BasicType,
     argStorage :: Storage
   }
+  deriving (Eq, Show)
 
 -- | Like ArgDef, but for struct fields.
 data FieldDef =
@@ -127,16 +139,18 @@ data FieldDef =
     fieldName :: Identifier,
     fieldType :: BasicType
   }
+  deriving (Eq, Show)
 
 -- | Solidity doesn't have tuple types, but it does have comma-separated
 -- lists of function arguments and return values.  Also, although we don't
 -- compile executable code, it has structured assignments via tuples.
-newtype Tuple = TupleValue [ArgDef]
+newtype Tuple = TupleValue [ArgDef] deriving (Eq, Show)
 
 -- | The different contexts in which a function or variable may be exposed.
 -- This affects inheritance and also the final ABI.
 data Visibility =
   PublicVisible | PrivateVisible | InternalVisible | ExternalVisible
+  deriving (Eq, Show)
 
 -- | The different ways a value can be stored
 --  - Storage: in Ethereum storage, a persistent database
@@ -152,6 +166,7 @@ data Storage =
  
 -- Layout, inheritance, and linkage
 -- | Storage variable container type by stage
+type StorageVarsStructure = StorageVars 'AfterLayout
 type family StorageVars (stage :: Stage) where
   StorageVars 'AfterLayout = StorageVarsT 'Complete 
   StorageVars s = StorageVarsT 'Incomplete 
@@ -173,9 +188,10 @@ data WithPos a =
     sizeOf :: Natural,
     stored :: a
     }
-  deriving (Functor)
+  deriving (Eq, Show, Functor)
 
 -- | Inheritance base contracts container by stage
+type BaseContractsStructure = BaseContracts 'AfterLayout
 type family BaseContracts (stage :: Stage) where
   BaseContracts 'AfterParsing = BaseContractsT 'Incomplete
   BaseContracts s = BaseContractsT 'Complete
@@ -196,6 +212,7 @@ data BaseContractsData =
     }
 
 -- | Linkage container by stage
+type LinkageStructure = Linkage 'AfterLayout
 type family Linkage (stage :: Stage) where
   Linkage 'AfterLinkage = LinkageData 'AfterLinkage
   Linkage 'AfterLayout = LinkageData 'AfterLayout
@@ -213,6 +230,7 @@ data LinkageData (s :: Stage) =
 
 -- Type-related datatypes
 -- | Types that can be defined by the programmer, by stage
+type NewTypeStructure = NewType 'AfterLayout
 type family NewType (stage :: Stage) where
   NewType 'AfterLayout = NewTypeT 'Complete
   NewType s = NewTypeT 'Incomplete
@@ -224,6 +242,8 @@ data NewTypeT (rstage :: RoughStage) =
   -- | Structs are formatted very similarly to contracts.  Their objects
   -- can only be of "variable" kind, however.
   Struct      { fields :: Fields rstage }
+deriving instance Show (NewTypeT 'Complete)
+deriving instance Eq (NewTypeT 'Complete)
 -- | Just a list of enum names, but when complete, it also includes its own
 -- storage size.
 type family Identifiers (rstage :: RoughStage) where
@@ -266,10 +286,12 @@ data BasicType =
   Mapping     { domType  :: BasicType, codType :: BasicType } |
   -- | The name of a new type, whose definition is kept in 'contractTypes'.
   LinkT { linkTo :: LinkID }
+  deriving (Eq, Show)
 
 -- | A link is a reference to some non-builtin name in an identifier.  The
 -- amount we can deduce about the nature of the referent depends on the
 -- stage of parsing.
+type TypeLinkStructure = TypeLink 'AfterLayout
 type family TypeLink (stage :: Stage) where
   TypeLink 'AfterLayout = DetailedLink 'Complete
   TypeLink 'AfterLinkage = DetailedLink 'Incomplete
@@ -284,7 +306,7 @@ data RoughLink =
   QualifiedLink {
     linkQualifier :: Identifier,
     linkName :: Identifier
-    } deriving (Eq, Ord)
+    } deriving (Eq, Show, Ord)
 -- | The actual things a link can be
 data DetailedLink (rstage :: RoughStage) =
   -- | Just a new type name
@@ -315,20 +337,20 @@ data ContractID =
   ContractID {
     contractFile :: FileName,
     contractName :: ContractName
-    } deriving (Eq, Ord)
+    } deriving (Eq, Show, Ord)
 -- | The declaration ID needs to record the original contract in case of
 -- inheritance or linking.
 data DeclID = 
   DeclID {
     declContract :: ContractID,
     declName :: Identifier
-    } deriving (Eq, Ord)
+    } deriving (Eq, Show, Ord)
 -- | The link ID needs to record the original contract and also its name.
 data LinkID = 
   LinkID {
     linkContract :: ContractID,
     linkIs :: RoughLink
-    } deriving (Eq, Ord)
+    } deriving (Eq, Show, Ord)
 
 -- File-level types
 -- | A parsed file.  It's important to remember which file contained
@@ -358,6 +380,7 @@ type ContractsByID (s :: Stage) = Map ContractID (Contract s)
 -- | Alias for a map containing contracts, stored by filename then contract
 -- name
 type ContractsByFile (s :: Stage) = Map FileName (ContractsByName s)
+type FileContractsStructure = ContractsByFile 'AfterLayout
 -- | Alias for a map containing contracts, stored by name
 type ContractsByName (s :: Stage) = Map ContractName (Contract s)
 -- | Alias for a map containing files
@@ -374,6 +397,7 @@ emptyContract =
     contractBases = [],
     contractLinkage = Map.empty,
 
+    contractRealName = "",
     contractVars = emptyDeclsBy,
     contractFuncs = emptyDeclsBy,
     contractEvents = emptyDeclsBy,

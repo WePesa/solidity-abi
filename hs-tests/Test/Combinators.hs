@@ -75,6 +75,7 @@ functionSignature name args vals =
   then "" 
   else "returns" ## paren'd (comma'd vals)
 
+-- Avoid functions with no body so our contracts are concrete
 functionDecl :: String -> [String] -> [String] -> String
-functionDecl name args vals = semi'd $ functionSignature name args vals
+functionDecl name args vals = functionSignature name args vals ## "{;}"
 

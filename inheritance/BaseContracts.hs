@@ -21,6 +21,7 @@ combine :: Contract 'AfterInheritance -> Contract 'AfterInheritance ->
            Contract 'AfterInheritance
 combine c1 c2 = -- c1 is derived from c2
   Contract {
+    contractRealName = contractRealName c1,
     contractVars = (combineDeclsBy `on` contractVars) c1 c2,
     contractFuncs = newFuncDecls,
     contractEvents = (combineDeclsBy `on` contractEvents) c1 c2,

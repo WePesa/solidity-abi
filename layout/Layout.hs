@@ -13,6 +13,8 @@ import Control.Monad.Trans.Reader
 import LayoutTypes
 import SolidityTypes
 
+import Debug.Trace
+
 -- | 'doLayout' analyzes the ordered list of global storage variables and
 -- assigns them byte locations in the blockchain contract's storage.
 --

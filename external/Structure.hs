@@ -15,7 +15,7 @@ import Layout
 
 -- | Takes a map of filenames to source code, and returns a map of
 -- filenames to contract names to fully parsed contract types
-parseToStructure :: Map FileName SourceCode -> ContractsByFile 'AfterLayout
+parseToStructure :: Map FileName SourceCode -> FileContractsStructure
 parseToStructure =
   makeContractsByFile .
   Map.filter contractIsConcrete .

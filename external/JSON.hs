@@ -50,14 +50,15 @@ contractToJSON c = flip runReader typesLinkage $ do
   sJSON :: [kv] <- 
     mapM (storageVarToJSON . fmap getVarType) storageList
   fJSON :: Map Identifier kv <- sequence $
-    Map.mapWithKey funcToJSON (defsByName $ contractFuncs c)
+    Map.mapWithKey funcToJSON (byNameDirectly $ contractFuncs c)
   eJSON :: Map Identifier kv <- sequence $ 
-    Map.mapWithKey eventToJSON (defsByName $ contractEvents c)
+    Map.mapWithKey eventToJSON (byNameDirectly $ contractEvents c)
   tJSON :: Map String kv <- sequence $ 
     Map.map typeToJSON (Map.mapKeys showDeclJSON $ byID $ contractTypes c) 
   cJSON :: Maybe (Map Identifier kv) <- sequence $
     (tupleToJSON . funcArgType) <$> Map.lookup constrID (byID $ contractFuncs c)
   return $
+    "realName" .= contractRealName c <>
     "storage" .= sJSON <>
     "funcs" .= fJSON <>
     "events" .= eJSON <>
@@ -69,14 +70,13 @@ contractToJSON c = flip runReader typesLinkage $ do
       Map.map (storageMap Map.!) (
         byName (contractVars c)
         `Map.intersection`
-        Map.filter isStorageVar (defsByName $ contractVars c)
+        Map.filter isStorageVar (byNameDirectly $ contractVars c)
         )
 
   where
     getVarType = varType . (byID (contractVars c) Map.!)
     storageList = reverse $ contractStorageVars c
     storageMap = Map.fromList $ zip (map stored storageList) [0::Integer ..]
-    defsByName declsBy = Map.map (byID declsBy Map.!) (byName declsBy)
     CompleteLinkage{typesLinkage, librariesLinkage} = contractLinkage c
     constrID = DeclID{declContract = cID, declName = contractName cID}
     cID = NonEmpty.head $ allBases $ contractBases c

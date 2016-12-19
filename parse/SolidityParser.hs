@@ -21,11 +21,10 @@ import SolidityTypes
 type SolidityParser = Parsec SourceCode (ContractID, Contract 'AfterParsing)
 
 -- | Initializes the parser state to be an empty contract with the given
--- filename and contract name.  The contract defaults to being a library as
--- an edge case. 
+-- filename and contract name.
 initContract :: FileName -> ContractName -> Bool -> SolidityParser ()
 initContract fileName name isLibrary = 
-  putState (ContractID fileName name, emptyContract{contractIsLibrary = isLibrary})
+  putState (ContractID fileName name, emptyContract{contractRealName = name, contractIsLibrary = isLibrary})
 
 -- | Constructs a "declaration ID" out of the given identifier.  This ID is
 -- file-independent, which is important for handling qualified or aliasing imports.
