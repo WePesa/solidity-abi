@@ -17,6 +17,9 @@ typeError tName = "type" ## quoted tName
 functionError :: String -> String
 functionError fName = "function" ## quoted fName
 
+eventError :: String -> String
+eventError fName = "event" ## quoted fName
+
 isMissingError :: String -> String
 isMissingError s = "is missing" ## s
 

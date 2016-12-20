@@ -27,6 +27,9 @@ comma'd = intercalate ","
 contractDefn :: String -> String -> String
 contractDefn name body = "contract" ## name ## braced body
 
+libraryDefn :: String -> String -> String
+libraryDefn name body = "library" ## name ## braced body
+
 contractDefnBases :: String -> String -> [String] -> String
 contractDefnBases name body bases = "contract" ## name ## "is" ## comma'd bases ## braced body
 
@@ -78,4 +81,14 @@ functionSignature name args vals =
 -- Avoid functions with no body so our contracts are concrete
 functionDecl :: String -> [String] -> [String] -> String
 functionDecl name args vals = functionSignature name args vals ## "{;}"
+
+eventSignature :: String -> Bool -> [String] -> String
+eventSignature name isAnon topics =
+  "event" ## name ## paren'd (comma'd topics) ##
+  if isAnon
+  then "anonymous"
+  else ""
+
+eventDecl :: String -> Bool -> [String] -> String
+eventDecl name isAnon topics = semi'd $ eventSignature name isAnon topics
 

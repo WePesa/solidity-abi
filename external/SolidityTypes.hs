@@ -300,7 +300,9 @@ type family TypeLink (stage :: Stage) where
 data RoughLink =
   -- | A plain non-builtin identifier, such as a user-defined type name
   -- (but also possibly a contract)
-  UnqualifiedLink Identifier |
+  UnqualifiedLink {
+    linkName :: Identifier 
+    } |
   -- | A qualified name A.b, where we don't yet know whether A is
   -- a library, base contract, or qualified imported contract.
   QualifiedLink {
@@ -308,6 +310,7 @@ data RoughLink =
     linkName :: Identifier
     } deriving (Eq, Show, Ord)
 -- | The actual things a link can be
+type DetailedLinkStructure = DetailedLink 'Complete
 data DetailedLink (rstage :: RoughStage) =
   -- | Just a new type name
   PlainLink (DeclLink rstage) |
@@ -317,6 +320,10 @@ data DetailedLink (rstage :: RoughStage) =
   LibraryLink (DeclLink rstage) |
   -- | A reference to an actual contract type
   ContractLink ContractID
+
+deriving instance Eq (DetailedLink 'Complete)
+deriving instance Show (DetailedLink 'Complete)
+
 -- | When incomplete, we only know the identity of the link; when complete,
 -- we also know where it is in storage.  Important for laying out contracts
 -- that refer to these links from already-laid out contracts.

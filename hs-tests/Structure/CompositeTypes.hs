@@ -129,7 +129,7 @@ mappingToMapping =
 structOfBasic :: StructureTestInput
 structOfBasic =
   compositeNewTypeTestInput cName tName id (`structDefn` types)
-    (typedefType cName tName) (Struct $ WithSize 62 $ typeObjs)
+    (typedefType cName tName) (Struct $ WithSize 64 $ typeObjs)
 
   where
     cName = "structOfBasic"

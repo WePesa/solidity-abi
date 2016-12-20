@@ -79,9 +79,11 @@ Test-Suite test-solidity-abi
   default-extensions: NamedFieldPuns
   other-modules:
     Test.Common, Test.Combinators, Test.ErrorMessages, Structure.Common,
-    Json.Common, Structure, Structure.BasicTypes, Structure.CompositeTypes,
-    Structure.Functions, Json, Json.Imports
+    Structure, Structure.BasicTypes, Structure.CompositeTypes, Structure.Events,
+    Structure.Functions, Structure.Imports, Structure.Inheritance,
+    Structure.Layout, Structure.Layout.Sizes, Structure.Layout.Storage,
+    Structure.Linkage, Structure.Linkage.Libraries, Structure.Linkage.Names
   build-depends:
-    base, solidity-abi, containers, aeson, tasty, tasty-hunit
+    base, solidity-abi, containers, aeson, tasty, tasty-hunit, semigroups
   default-language: Haskell2010
 

@@ -15,8 +15,7 @@ test = testGroup "imports" $ map structureTest [
   basicImport, qualifiedBasicImport,
   basicStarImport, qualifiedBasicStarImport,
   es6Import, es6AliasImport,
-  transitiveImport, diamondImport,
-  es6AliasImportInheritance
+  transitiveImport, diamondImport
   ]
 
 basicImport :: StructureTestInput
@@ -73,25 +72,6 @@ diamondImport = (name, sources, tester)
       ]
     tester contracts = fileHasContracts name contracts
       ["C", "C1", "C2", dotAliaser "F1" "C12", dotAliaser "F2" "C12"]
-
-es6AliasImportInheritance :: StructureTestInput
-es6AliasImportInheritance =
-  importTestInheritance "es6AliasImportInheritance" 
-    (\cName fName -> importFileES6Aliases fName [cName] [alias])
-    (constAliaser alias)
-
-  where alias = "Imported"
-
-importTestInheritance :: String -> (String -> String -> String) -> (String -> String) ->
-                         StructureTestInput
-importTestInheritance name importer aliaser = (name, sources, tester)
-  where
-    sources = Map.fromList [
-      (name, importer "D" importName ## contractDefnBases "C" "" [aliaser "D"]),
-      (importName, contractDefnBases "D" "" ["E"] ## contractDefn "E" "")
-      ]
-    tester contracts = fileHasContracts name contracts ["C", aliaser "D"]
-    importName = name ++ "_import"
 
 importTest :: String -> (String -> String -> String) -> (String -> String) -> StructureTestInput
 importTest name importer aliaser = (name, sources, tester)

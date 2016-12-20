@@ -87,7 +87,7 @@ doTypeLayout :: NewType 'AfterLinkage -> LayoutReader (NewType 'AfterLayout)
 doTypeLayout enum@Enum{names} = 
   return enum{
     names = WithSize{
-      sizeOf = ceiling $ logBase (256::Double) $ fromIntegral $ length names,
+      sizeOf = 1 + (floor $ logBase (256::Double) $ fromIntegral $ length names),
       stored = names
       }
     }
@@ -95,7 +95,8 @@ doTypeLayout struct@Struct{fields} = do
   fieldsLayout <- doVarTypesLayout $ map fieldType fields
   return struct{
     fields = WithSize{
-      sizeOf = 1 + endPos (head fieldsLayout), -- fields are reversed
+      -- structs have to occupy full storage slots
+      sizeOf = nextLayoutStart (1 + endPos (head fieldsLayout)) 32,
       stored = Map.fromList $ zipWith makeFieldDefL fields fieldsLayout
       }
     }
